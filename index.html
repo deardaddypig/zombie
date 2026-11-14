@@ -1,0 +1,3363 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>黃昏屍城：絕地求生 | High-Res Pixel Zombie Survival</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700;900&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            box-sizing: border-box;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #180f14;
+            font-family: 'Noto Sans TC', sans-serif;
+            touch-action: none;
+        }
+        .pixel-font {
+            font-family: 'Press Start 2P', 'Noto Sans TC', monospace;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        .dusk-vignette {
+            pointer-events: none;
+            background: radial-gradient(circle at center, rgba(255, 145, 65, 0.04) 35%, rgba(18, 8, 18, 0.65) 100%);
+        }
+        .damage-flash {
+            pointer-events: none;
+            transition: opacity 0.1s ease-out;
+            background: radial-gradient(circle at center, transparent 30%, rgba(220, 20, 20, 0.8) 100%);
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1a121b;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #f59e0b;
+            border-radius: 4px;
+        }
+        .char-card {
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+        }
+        .char-card.selected {
+            border-color: #fbbf24;
+            background: linear-gradient(180deg, rgba(251, 191, 36, 0.24) 0%, rgba(28, 19, 38, 0.96) 100%);
+            transform: translateY(-4px);
+            box-shadow: 0 10px 24px -4px rgba(251, 191, 36, 0.5);
+        }
+        @keyframes pulseBanner {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.06); }
+        }
+        .boss-banner {
+            animation: pulseBanner 0.55s infinite;
+        }
+    </style>
+</head>
+<body class="relative w-full h-full text-white overflow-hidden">
+
+    <!-- Main Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Atmospheric Dusk & Hurt Overlays -->
+    <div class="dusk-vignette absolute inset-0 z-10"></div>
+    <div id="damageOverlay" class="damage-flash absolute inset-0 z-10 opacity-0"></div>
+
+    <!-- BOSS Warning Banner -->
+    <div id="bossWarning" class="hidden absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+        <div class="boss-banner bg-red-950/95 border-2 border-red-400 px-6 py-2 rounded-lg shadow-2xl text-center">
+            <p class="text-xs sm:text-sm text-yellow-300 font-bold tracking-widest">⚠️ 屍潮警報 WARNING ⚠️</p>
+            <p class="text-base sm:text-xl font-black text-white">巨型暴君 BOSS 出現！</p>
+        </div>
+    </div>
+
+    <!-- ==================== TOP HUD (Exact Match to Reference Image) ==================== -->
+    <div id="gameHud" class="hidden absolute inset-x-0 top-0 z-20 p-3 sm:p-4 pointer-events-none flex justify-between items-start">
+        <!-- Top-Left: Pixel Heart + Metallic Red HP Bar + Gold Coin Counter -->
+        <div class="flex flex-col gap-2 pointer-events-auto">
+            <div class="flex items-center gap-1.5">
+                <!-- Pixel Heart Canvas Icon -->
+                <canvas id="hudHeartIcon" width="32" height="32" class="w-8 h-8 sm:w-9 sm:h-9 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]"></canvas>
+                <!-- Dark Metallic Framed HP Bar -->
+                <div class="relative w-40 sm:w-56 h-6 sm:h-7 bg-[#252433] border-[3px] border-[#111018] rounded shadow-[0_3px_0_#000,inset_0_2px_4px_rgba(0,0,0,0.8)] p-0.5">
+                    <div id="hpBarFill" class="h-full bg-gradient-to-b from-[#ff4d5a] via-[#dc2626] to-[#991b1b] transition-all duration-150" style="width: 100%;"></div>
+                    <div class="absolute inset-0 flex items-center justify-center text-[11px] sm:text-xs font-black tracking-wider text-white drop-shadow-[0_1px_2px_#000]">
+                        <span id="hpText">100 / 100</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Coin Counter Pill & Armor Status -->
+            <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 bg-[#16131d]/90 border-2 border-[#2e283b] px-3 py-1 rounded-lg shadow-md">
+                    <canvas id="hudCoinIcon" width="20" height="20" class="w-5 h-5"></canvas>
+                    <span id="coinText" class="text-base sm:text-lg font-black text-[#fcd34d] tracking-wide">0</span>
+                </div>
+                <div id="hudArmorBadge" class="text-[11px] sm:text-xs bg-[#16131d]/90 border border-cyan-500/40 text-cyan-300 px-2.5 py-1 rounded-lg font-bold shadow">
+                    便服 (0%減傷)
+                </div>
+                <button id="muteBtn" class="bg-[#16131d]/90 hover:bg-slate-800 border border-slate-600 text-xs px-2 py-1 rounded-lg shadow cursor-pointer" title="音效開關">
+                    🔊
+                </button>
+            </div>
+        </div>
+
+        <!-- Top-Right: Survival Time & Kills Box (Exact Match to Reference Image) -->
+        <div class="flex flex-col items-end gap-1.5 pointer-events-auto">
+            <div class="bg-[#14111a]/90 border-2 border-[#2d2638] px-4 py-1.5 rounded-lg shadow-lg text-right min-w-[115px] sm:min-w-[135px]">
+                <div id="timerText" class="text-xl sm:text-2xl font-black text-white tracking-wider leading-tight">00:00</div>
+            </div>
+            <div class="bg-[#14111a]/90 border-2 border-[#2d2638] px-3.5 py-1 rounded-lg shadow-lg text-right min-w-[115px] sm:min-w-[135px]">
+                <div class="text-sm sm:text-base font-bold text-slate-100">Kills: <span id="killText" class="text-amber-400 font-black">0</span></div>
+            </div>
+            <div class="flex items-center gap-1.5 text-[10px] sm:text-xs bg-[#14111a]/80 px-2.5 py-0.5 rounded border border-amber-500/30 text-amber-300">
+                <span>🧟 <span id="zombieCountText">0</span>/60</span>
+                <span>•</span>
+                <span id="scalingBadge">100% HP</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shop Proximity Floating Prompt -->
+    <div id="shopPrompt" class="hidden absolute bottom-44 sm:bottom-12 left-1/2 -translate-x-1/2 z-20">
+        <button id="openShopBtn" class="bg-gradient-to-r from-fuchsia-600 to-amber-500 hover:from-fuchsia-500 hover:to-amber-400 active:scale-95 text-white font-black px-5 py-2.5 rounded-xl shadow-[0_0_24px_rgba(236,72,153,0.8)] border-2 border-yellow-200 flex items-center gap-2 text-sm sm:text-base animate-bounce cursor-pointer">
+            <span>🚐 進入 SHOP 裝甲補給車</span>
+        </button>
+    </div>
+
+    <!-- ==================== BOTTOM-LEFT VIRTUAL JOYSTICK (With 4 Direction Arrows) ==================== -->
+    <div id="joystickZone" class="hidden absolute bottom-5 left-5 sm:bottom-7 sm:left-7 w-36 h-36 sm:w-44 sm:h-44 z-20 flex items-center justify-center">
+        <div id="joystickBase" class="relative w-32 h-32 sm:w-36 sm:h-36 rounded-full bg-slate-900/45 border-2 border-slate-300/45 backdrop-blur-[2px] flex items-center justify-center shadow-[0_0_20px_rgba(0,0,0,0.75)]">
+            <!-- 4 Directional Triangles matching screenshot -->
+            <div class="absolute top-2 left-1/2 -translate-x-1/2 text-slate-200/65 text-[11px] pointer-events-none">▲</div>
+            <div class="absolute bottom-2 left-1/2 -translate-x-1/2 text-slate-200/65 text-[11px] pointer-events-none">▼</div>
+            <div class="absolute left-2 top-1/2 -translate-y-1/2 text-slate-200/65 text-[11px] pointer-events-none">◀</div>
+            <div class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-200/65 text-[11px] pointer-events-none">▶</div>
+            <!-- Draggable Inner Knob -->
+            <div id="joystickKnob" class="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-200/35 border-2 border-white/60 shadow-inner pointer-events-none flex items-center justify-center transition-transform duration-75">
+                <div class="w-5 h-5 rounded-full bg-white/40"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== BOTTOM-RIGHT RADIAL WEAPON WHEEL (Exact Match to Reference Image) ==================== -->
+    <div id="weaponWheelZone" class="hidden absolute bottom-5 right-5 sm:bottom-7 sm:right-7 w-36 h-36 sm:w-44 sm:h-44 z-20 flex items-center justify-center">
+        <canvas id="weaponWheelCanvas" width="176" height="176" class="w-36 h-36 sm:w-44 sm:h-44 cursor-pointer drop-shadow-[0_4px_16px_rgba(0,0,0,0.85)]"></canvas>
+    </div>
+
+    <!-- ==================== 1. START & HIGH-RES CHARACTER SELECTION MODAL ==================== -->
+    <div id="startScreen" class="absolute inset-0 z-30 flex items-center justify-center p-3 sm:p-6 bg-gradient-to-b from-[#1e1124]/95 via-[#120b16]/95 to-[#24130f]/95 backdrop-blur-md overflow-y-auto">
+        <div class="w-full max-w-4xl bg-[#181221]/95 border-2 border-amber-500/75 rounded-2xl p-4 sm:p-6 shadow-2xl my-auto">
+            <div class="text-center mb-4 sm:mb-5">
+                <div class="inline-block bg-amber-500/20 border border-amber-400/50 text-amber-300 text-xs px-3 py-1 rounded-full mb-2 font-bold">
+                    🌇 高清 2.5D 像素街頭・俯視角喪屍求生射擊
+                </div>
+                <h1 class="text-2xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-orange-400 to-rose-500 tracking-tight">
+                    黃昏屍城：絕地求生
+                </h1>
+                <p class="text-xs sm:text-sm text-slate-300 mt-1">
+                    選擇你嘅高像素傳奇角色！自動鎖定最近喪屍開火，拾取金幣、打開街頭發光寶箱補血，行近霓虹 SHOP 裝甲貨車升級重型武器！
+                </p>
+            </div>
+
+            <!-- 4 High-Res Pixel Art Character Cards -->
+            <div id="charGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-5"></div>
+
+            <!-- Controls & Start Button -->
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#110c18] border border-slate-800 rounded-xl p-3.5 sm:p-4">
+                <div class="text-xs text-slate-300 space-y-1 text-center sm:text-left">
+                    <div>📱 <strong class="text-amber-400">手機操控：</strong>左下虛擬方向搖桿移動，右下圓盤一鍵切換武器</div>
+                    <div>💻 <strong class="text-amber-400">電腦操控：</strong>WASD / 方向鍵移動，數字鍵 1-6 或點擊右下圓盤換槍</div>
+                </div>
+                <button id="startGameBtn" class="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 active:scale-95 text-slate-950 font-black text-base sm:text-lg px-8 py-3.5 rounded-xl shadow-[0_0_25px_rgba(245,158,11,0.55)] border-2 border-yellow-200 transition cursor-pointer">
+                    🔥 立即出發生存
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 2. SHOP MODAL (街邊裝甲車黑市商店) ==================== -->
+    <div id="shopModal" class="hidden absolute inset-0 z-30 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md">
+        <div class="w-full max-w-3xl max-h-[90vh] flex flex-col bg-[#181322] border-2 border-fuchsia-500/80 rounded-2xl shadow-[0_0_40px_rgba(217,70,239,0.35)] overflow-hidden">
+            <div class="flex items-center justify-between bg-gradient-to-r from-fuchsia-950 via-[#1f162e] to-[#181322] px-4 py-3 border-b border-fuchsia-500/40">
+                <div class="flex items-center gap-2.5">
+                    <span class="text-2xl">🚐</span>
+                    <div>
+                        <h2 class="text-base sm:text-xl font-black text-fuchsia-300 tracking-wide">SHOP 街頭裝甲軍火車</h2>
+                        <p class="text-[11px] sm:text-xs text-slate-300">戰鬥已暫停・購買武器後可用右下圓盤隨時切換</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="bg-[#110d19] border border-yellow-500/50 px-3 py-1 rounded-lg font-black text-yellow-400 text-sm sm:text-base">
+                        🪙 <span id="shopCoinText">0</span>
+                    </div>
+                    <button id="closeShopBtn" class="bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs sm:text-sm cursor-pointer">
+                        離開 ✖
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-3 sm:p-5 overflow-y-auto space-y-5">
+                <div>
+                    <h3 class="text-xs sm:text-sm font-black text-cyan-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                        <span>🛡️</span> 血量上限與防彈護甲（減傷／移速變化）
+                    </h3>
+                    <div id="shopUpgradeList" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+                </div>
+
+                <div>
+                    <h3 class="text-xs sm:text-sm font-black text-amber-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                        <span>🔫</span> 6 大特色軍火武器（點擊購買或切換）
+                    </h3>
+                    <div id="shopWeaponList" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+                </div>
+            </div>
+
+            <div class="bg-[#110d19] px-4 py-2.5 border-t border-slate-800 flex justify-between items-center text-xs text-slate-400">
+                <span>提示：離開裝甲車範圍後再行近，即可再次開啟商店</span>
+                <button id="resumeFromShopBtn" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-5 py-1.5 rounded-lg cursor-pointer">
+                    繼續戰鬥 ▶
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 3. GAME OVER & ONLINE LEADERBOARD MODAL ==================== -->
+    <div id="gameOverModal" class="hidden absolute inset-0 z-30 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md overflow-y-auto">
+        <div class="relative w-full max-w-2xl bg-[#181221] border-2 border-rose-500/80 rounded-2xl p-4 sm:p-6 shadow-2xl my-auto">
+            <div class="text-center mb-4">
+                <div class="inline-block bg-rose-500/20 border border-rose-400/40 text-rose-300 text-xs px-3 py-0.5 rounded-full mb-1 font-bold">
+                    GAME OVER・倖存者倒下
+                </div>
+                <h2 class="text-2xl sm:text-4xl font-black text-rose-500 tracking-wide">黃昏屍潮・生存終結</h2>
+            </div>
+
+            <!-- Run Stats -->
+            <div class="grid grid-cols-3 gap-2 sm:gap-4 mb-4 bg-[#110d18] p-3 sm:p-4 rounded-xl border border-slate-800 text-center">
+                <div>
+                    <div class="text-[11px] sm:text-xs text-slate-400">存活時間</div>
+                    <div id="goTimeText" class="pixel-font text-base sm:text-2xl font-black text-amber-400 mt-1">00:00</div>
+                </div>
+                <div>
+                    <div class="text-[11px] sm:text-xs text-slate-400">總擊殺數</div>
+                    <div id="goKillText" class="pixel-font text-base sm:text-2xl font-black text-rose-400 mt-1">0</div>
+                </div>
+                <div>
+                    <div class="text-[11px] sm:text-xs text-slate-400">使用角色</div>
+                    <div id="goCharText" class="text-sm sm:text-xl font-black text-cyan-300 mt-1">Leon</div>
+                </div>
+            </div>
+
+            <!-- Score Upload -->
+            <div class="bg-[#110d18] border border-amber-500/30 rounded-xl p-3 mb-4">
+                <label class="block text-xs text-amber-300 font-bold mb-1.5">🏆 登記成績上「線上全球排名榜」：</label>
+                <div class="flex gap-2">
+                    <input id="playerNameInput" type="text" maxlength="14" placeholder="輸入你嘅稱號 (例如: 旺角里昂)" class="flex-1 bg-slate-900 border border-slate-700 focus:border-amber-400 rounded-lg px-3 py-2 text-sm text-white outline-none">
+                    <button id="submitScoreBtn" class="bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black px-4 py-2 rounded-lg text-xs sm:text-sm whitespace-nowrap cursor-pointer">
+                        上傳分數
+                    </button>
+                </div>
+                <p id="submitStatusMsg" class="text-[11px] text-emerald-400 mt-1 hidden"></p>
+            </div>
+
+            <!-- Online Leaderboard Table -->
+            <div class="bg-[#110d18] border border-slate-800 rounded-xl p-3 mb-5">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-xs sm:text-sm font-black text-amber-400 flex items-center gap-1.5">
+                        <span>🌐</span> 線上生存排名榜 (TOP 15)
+                    </h3>
+                    <span id="leaderboardStatus" class="text-[11px] text-slate-400">連線同步中...</span>
+                </div>
+                <div class="max-h-40 overflow-y-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="text-slate-400 border-b border-slate-800 text-[11px]">
+                            <tr>
+                                <th class="py-1 px-2">#</th>
+                                <th class="py-1 px-2">玩家</th>
+                                <th class="py-1 px-2">角色</th>
+                                <th class="py-1 px-2">存活時間</th>
+                                <th class="py-1 px-2 text-right">擊殺數</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody" class="divide-y divide-slate-800/60"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Replay & Reselect -->
+            <div class="flex flex-col sm:flex-row gap-2.5">
+                <button id="replaySameCharBtn" class="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-95 text-slate-950 font-black py-3 rounded-xl text-base shadow-lg cursor-pointer">
+                    🔄 一鍵重玩 (原角色)
+                </button>
+                <button id="backToCharSelectBtn" class="sm:w-44 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-bold py-3 rounded-xl text-sm border border-slate-600 cursor-pointer">
+                    👤 更換角色
+                </button>
+            </div>
+
+            <!-- Hidden Requirement: Subtle setting icon at bottom-right of Game Over -->
+            <button id="secretSettingBtn" title="參數設定" class="absolute bottom-2 right-2.5 w-6 h-6 rounded-full bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-amber-300 flex items-center justify-center text-xs opacity-50 hover:opacity-100 transition cursor-pointer">
+                ⚙️
+            </button>
+        </div>
+    </div>
+
+    <!-- ==================== 4. SECRET PASSWORD & ADMIN TUNING MODAL (密碼: 94839769) ==================== -->
+    <div id="secretModal" class="hidden absolute inset-0 z-40 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+        <div class="w-full max-w-md bg-[#181221] border-2 border-amber-500 rounded-2xl p-5 shadow-2xl">
+            <div id="passwordGateView">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-base font-black text-amber-400">🔒 開發者參數鎖定</h3>
+                    <button id="closeSecretModalBtn1" class="text-slate-400 hover:text-white text-sm cursor-pointer">✖</button>
+                </div>
+                <p class="text-xs text-slate-300 mb-3">請輸入工程師密碼以解鎖全遊戲參數調校面板：</p>
+                <input id="secretPwdInput" type="password" inputmode="numeric" placeholder="輸入密碼..." class="w-full bg-slate-950 border border-slate-700 focus:border-amber-400 rounded-lg px-3 py-2 text-sm text-white mb-2 outline-none">
+                <p id="secretPwdError" class="text-xs text-rose-400 mb-2 hidden">❌ 密碼錯誤，請重新輸入！</p>
+                <div class="flex justify-end gap-2 mt-2">
+                    <button id="unlockSecretBtn" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-5 py-2 rounded-lg text-xs sm:text-sm cursor-pointer">
+                        解鎖設定
+                    </button>
+                </div>
+            </div>
+
+            <div id="tuningPanelView" class="hidden">
+                <div class="flex items-center justify-between mb-3 border-b border-slate-800 pb-2">
+                    <div>
+                        <h3 class="text-base font-black text-emerald-400">⚙️ 隱藏工程師參數控制台</h3>
+                        <p class="text-[11px] text-slate-400">修改後即時套用至下一場遊戲</p>
+                    </div>
+                    <button id="closeSecretModalBtn2" class="text-slate-400 hover:text-white text-sm cursor-pointer">✖</button>
+                </div>
+
+                <div class="space-y-3 max-h-[60vh] overflow-y-auto pr-1 text-xs">
+                    <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        <div class="flex justify-between mb-1">
+                            <span class="font-bold text-slate-200">❤️ 玩家初始血量 (Max HP)</span>
+                            <span id="valPlayerHp" class="text-amber-400 font-bold">100</span>
+                        </div>
+                        <input id="cfgPlayerHp" type="range" min="20" max="1000" step="10" value="100" class="w-full accent-amber-500">
+                    </div>
+
+                    <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        <div class="flex justify-between mb-1">
+                            <span class="font-bold text-slate-200">👟 玩家移動速度 (Move Speed)</span>
+                            <span id="valPlayerSpeed" class="text-amber-400 font-bold">210</span>
+                        </div>
+                        <input id="cfgPlayerSpeed" type="range" min="80" max="500" step="10" value="210" class="w-full accent-amber-500">
+                    </div>
+
+                    <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        <div class="flex justify-between mb-1">
+                            <span class="font-bold text-slate-200">💥 子彈傷害倍率 (Damage Mult)</span>
+                            <span id="valBulletDmg" class="text-amber-400 font-bold">1.0x</span>
+                        </div>
+                        <input id="cfgBulletDmg" type="range" min="0.2" max="10.0" step="0.2" value="1.0" class="w-full accent-amber-500">
+                    </div>
+
+                    <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        <div class="flex justify-between mb-1">
+                            <span class="font-bold text-slate-200">⚡ 武器射速倍率 (Fire Rate Mult)</span>
+                            <span id="valFireRate" class="text-amber-400 font-bold">1.0x</span>
+                        </div>
+                        <input id="cfgFireRate" type="range" min="0.2" max="5.0" step="0.2" value="1.0" class="w-full accent-amber-500">
+                    </div>
+
+                    <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        <div class="flex justify-between mb-1">
+                            <span class="font-bold text-slate-200">🧟 殭屍血量倍率 (Zombie HP Mult)</span>
+                            <span id="valZombieHp" class="text-amber-400 font-bold">1.0x</span>
+                        </div>
+                        <input id="cfgZombieHp" type="range" min="0.2" max="5.0" step="0.1" value="1.0" class="w-full accent-amber-500">
+                    </div>
+
+                    <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        <div class="flex justify-between mb-1">
+                            <span class="font-bold text-slate-200">🏃 殭屍移速倍率 (Zombie Speed Mult)</span>
+                            <span id="valZombieSpeed" class="text-amber-400 font-bold">1.0x</span>
+                        </div>
+                        <input id="cfgZombieSpeed" type="range" min="0.2" max="3.5" step="0.1" value="1.0" class="w-full accent-amber-500">
+                    </div>
+
+                    <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                        <div class="flex justify-between mb-1">
+                            <span class="font-bold text-slate-200">⏱️ 殭屍生成頻率倍率 (Spawn Rate)</span>
+                            <span id="valSpawnRate" class="text-amber-400 font-bold">1.0x</span>
+                        </div>
+                        <input id="cfgSpawnRate" type="range" min="0.2" max="5.0" step="0.2" value="1.0" class="w-full accent-amber-500">
+                    </div>
+                </div>
+
+                <div class="flex justify-between gap-2 mt-4 pt-2 border-t border-slate-800">
+                    <button id="resetConfigBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-xs cursor-pointer">
+                        還原預設
+                    </button>
+                    <button id="saveConfigBtn" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-5 py-2 rounded-lg text-xs sm:text-sm cursor-pointer">
+                        💾 儲存並套用
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== FIREBASE & HIGH-RES PIXEL ENGINE ==================== -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ------------------------------------------------------------------
+        // 1. FIREBASE ONLINE LEADERBOARD
+        // ------------------------------------------------------------------
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let leaderboardEntries = [];
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'dusk-zombie-survival-hk';
+
+        const defaultScores = [
+            { name: "R.P.D.里昂", charName: "Leon", survivalTime: 645, kills: 412 },
+            { name: "旺角Ellie", charName: "Ellie", survivalTime: 512, kills: 328 },
+            { name: "RTX5090教主", charName: "Jensen", survivalTime: 430, kills: 289 },
+            { name: "火星殖民者", charName: "Elon Musk", survivalTime: 365, kills: 215 },
+            { name: "深水埗槍神", charName: "Leon", survivalTime: 245, kills: 140 }
+        ];
+
+        async function initFirebaseLeaderboard() {
+            try {
+                if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+                    leaderboardEntries = [...defaultScores];
+                    renderLeaderboardTable();
+                    document.getElementById('leaderboardStatus').textContent = '本地展示模式';
+                    return;
+                }
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    currentUser = user;
+                    if (user) subscribeLeaderboard();
+                });
+            } catch (err) {
+                leaderboardEntries = [...defaultScores];
+                renderLeaderboardTable();
+                document.getElementById('leaderboardStatus').textContent = '離線排行榜';
+            }
+        }
+
+        function subscribeLeaderboard() {
+            if (!currentUser || !db) return;
+            const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+            onSnapshot(colRef, (snapshot) => {
+                const fetched = [];
+                snapshot.forEach(docSnap => {
+                    const d = docSnap.data();
+                    if (d && typeof d.survivalTime === 'number') fetched.push(d);
+                });
+                const combined = [...fetched, ...defaultScores];
+                combined.sort((a, b) => (b.survivalTime - a.survivalTime) || ((b.kills || 0) - (a.kills || 0)));
+                leaderboardEntries = combined.slice(0, 15);
+                renderLeaderboardTable();
+                document.getElementById('leaderboardStatus').textContent = '🟢 即時連線同步';
+            }, () => {
+                leaderboardEntries = [...defaultScores];
+                renderLeaderboardTable();
+            });
+        }
+
+        async function submitOnlineScore(playerName, charName, survivalTime, kills) {
+            const cleanName = (playerName || '無名倖存者').trim().slice(0, 14);
+            const newEntry = {
+                name: cleanName,
+                charName,
+                survivalTime: Math.floor(survivalTime),
+                kills: Math.floor(kills),
+                uid: currentUser ? currentUser.uid : 'local',
+                createdAt: Date.now()
+            };
+            leaderboardEntries.push(newEntry);
+            leaderboardEntries.sort((a, b) => (b.survivalTime - a.survivalTime) || (b.kills - a.kills));
+            leaderboardEntries = leaderboardEntries.slice(0, 15);
+            renderLeaderboardTable();
+
+            if (currentUser && db) {
+                try {
+                    const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+                    await addDoc(colRef, newEntry);
+                } catch (e) {
+                    console.warn("Score upload error:", e);
+                }
+            }
+        }
+
+        function formatTimeMMSS(sec) {
+            const total = Math.max(0, Math.floor(sec));
+            const m = String(Math.floor(total / 60)).padStart(2, '0');
+            const s = String(total % 60).padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        function escapeHtml(str) {
+            return String(str || '').replace(/[&<>"']/g, s => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[s]));
+        }
+
+        function renderLeaderboardTable() {
+            const tbody = document.getElementById('leaderboardBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            leaderboardEntries.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                const rankBadge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}`;
+                tr.className = idx < 3 ? 'text-amber-200 font-bold bg-amber-500/5' : 'text-slate-300';
+                tr.innerHTML = `
+                    <td class="py-1.5 px-2">${rankBadge}</td>
+                    <td class="py-1.5 px-2 truncate max-w-[110px]">${escapeHtml(item.name)}</td>
+                    <td class="py-1.5 px-2 text-cyan-300">${escapeHtml(item.charName)}</td>
+                    <td class="py-1.5 px-2 font-mono text-amber-400">${formatTimeMMSS(item.survivalTime)}</td>
+                    <td class="py-1.5 px-2 text-right font-mono text-rose-400">${item.kills || 0}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // ------------------------------------------------------------------
+        // 2. WEB AUDIO SYNTHESIZER (Retro Chiptune Sound Effects)
+        // ------------------------------------------------------------------
+        class SoundSystem {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+                this.lastFlameSfx = 0;
+            }
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+            }
+            toggleMute() {
+                this.muted = !this.muted;
+                return this.muted;
+            }
+            playShoot(weaponId) {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+
+                if (weaponId === 'flamethrower') {
+                    if (now - this.lastFlameSfx < 0.08) return;
+                    this.lastFlameSfx = now;
+                    this.playNoise(0.08, 650, 0.08);
+                    return;
+                }
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                if (weaponId === 'pistol') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(540, now);
+                    osc.frequency.exponentialRampToValueAtTime(115, now + 0.075);
+                    gain.gain.setValueAtTime(0.13, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.075);
+                    osc.start(now);
+                    osc.stop(now + 0.075);
+                } else if (weaponId === 'smg') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(680, now);
+                    osc.frequency.exponentialRampToValueAtTime(170, now + 0.05);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
+                    osc.start(now);
+                    osc.stop(now + 0.05);
+                } else if (weaponId === 'shotgun') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(250, now);
+                    osc.frequency.exponentialRampToValueAtTime(52, now + 0.14);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.14);
+                    osc.start(now);
+                    osc.stop(now + 0.14);
+                    this.playNoise(0.1, 950, 0.12);
+                } else if (weaponId === 'sniper') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(820, now);
+                    osc.frequency.exponentialRampToValueAtTime(65, now + 0.18);
+                    gain.gain.setValueAtTime(0.22, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.18);
+                    osc.start(now);
+                    osc.stop(now + 0.18);
+                } else if (weaponId === 'rocket') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(210, now);
+                    osc.frequency.exponentialRampToValueAtTime(45, now + 0.25);
+                    gain.gain.setValueAtTime(0.22, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                }
+            }
+            playNoise(duration = 0.1, filterFreq = 800, vol = 0.15) {
+                if (this.muted || !this.ctx) return;
+                const bufferSize = this.ctx.sampleRate * duration;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = filterFreq;
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start();
+            }
+            playExplosion() {
+                if (this.muted) return;
+                this.init();
+                this.playNoise(0.34, 340, 0.34);
+            }
+            playHit() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(195, now);
+                osc.frequency.exponentialRampToValueAtTime(60, now + 0.045);
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.045);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.045);
+            }
+            playPlayerHurt() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(165, now);
+                osc.frequency.linearRampToValueAtTime(52, now + 0.22);
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.22);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.22);
+            }
+            playCoin() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(987.77, now);
+                osc.frequency.setValueAtTime(1318.51, now + 0.05);
+                gain.gain.setValueAtTime(0.11, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.14);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.14);
+            }
+            playChestHeal() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.055);
+                    gain.gain.setValueAtTime(0.13, now + idx * 0.055);
+                    gain.gain.linearRampToValueAtTime(0.01, now + idx * 0.055 + 0.12);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.055);
+                    osc.stop(now + idx * 0.055 + 0.12);
+                });
+            }
+            playBossAlarm() {
+                if (this.muted || !this.ctx) return;
+                const now = this.ctx.currentTime;
+                for (let i = 0; i < 3; i++) {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(340, now + i * 0.25);
+                    osc.frequency.linearRampToValueAtTime(130, now + i * 0.25 + 0.2);
+                    gain.gain.setValueAtTime(0.2, now + i * 0.25);
+                    gain.gain.linearRampToValueAtTime(0.01, now + i * 0.25 + 0.22);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + i * 0.25);
+                    osc.stop(now + i * 0.25 + 0.22);
+                }
+            }
+        }
+        const sfx = new SoundSystem();
+
+        // ------------------------------------------------------------------
+        // 3. HIGH-RES PIXEL ART SPRITE ENGINE (32x48 & 48x56 Detailed Pixel Art)
+        // ------------------------------------------------------------------
+        const CHARACTERS = [
+            {
+                id: 'leon',
+                name: 'Leon',
+                title: 'R.P.D. 特警男主角',
+                franchise: 'Resident Evil',
+                desc: '身穿 R.P.D. 藍黑防彈背心與護膝，棕髮冷靜神射手。'
+            },
+            {
+                id: 'ellie',
+                name: 'Ellie',
+                title: '末日求生女主角',
+                franchise: 'The Last of Us',
+                desc: '紅棕馬尾配格仔紅衫、綠色背囊與牛仔褲，絕境反擊。'
+            },
+            {
+                id: 'jensen',
+                name: 'Jensen',
+                title: 'NVIDIA 教主皮褸王',
+                franchise: 'NVIDIA CEO',
+                desc: '招牌銀白髮、黑框眼鏡配拉鍊黑皮褸，手持綠光 RTX 顯示卡！'
+            },
+            {
+                id: 'elon',
+                name: 'Elon Musk',
+                title: 'SpaceX 鋼鐵狂人',
+                franchise: 'SpaceX CEO',
+                desc: '身穿黑色 SpaceX 太空任務服配燃料喉管，手持噴火槍鎮壓屍潮。'
+            }
+        ];
+
+        // Draws a high-resolution pixel art character (matching the uploaded 4 reference portraits)
+        function drawHighResCharacter(ctx, charId, x, y, scale = 1.9, walkCycle = 0, facingLeft = false, weaponId = 'pistol', aimAngle = 0, isHurt = false, isPortrait = false) {
+            ctx.save();
+            ctx.translate(Math.round(x), Math.round(y));
+
+            const isMoving = walkCycle > 0;
+            const bob = isMoving ? Math.round(Math.sin(walkCycle * 12) * 1.5) : 0;
+            const legL = isMoving ? Math.round(Math.sin(walkCycle * 12) * 2.5) : 0;
+            const legR = isMoving ? -legL : 0;
+
+            // Crisp Pixel Ground Shadow
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
+            ctx.beginPath();
+            ctx.ellipse(0, 21 * scale, 12 * scale, 4.2 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.save();
+            if (facingLeft) ctx.scale(-1, 1);
+            ctx.translate(0, bob * scale);
+
+            // Helper to draw crisp pixel blocks on a 1px virtual grid
+            const px = (gx, gy, gw, gh, color) => {
+                ctx.fillStyle = isHurt ? '#ffffff' : color;
+                ctx.fillRect(
+                    Math.round(gx * scale),
+                    Math.round(gy * scale),
+                    Math.ceil(gw * scale),
+                    Math.ceil(gh * scale)
+                );
+            };
+
+            const OUT = '#120e14'; // Crisp dark pixel outline
+
+            if (charId === 'leon') {
+                // --- HIGH-RES LEON S. KENNEDY (Matches leon_2.jpg) ---
+                // Legs & Combat Boots (with knee pads & thigh holster)
+                // Left Leg
+                px(-8, 8 + legL, 6, 12, OUT);
+                px(-7, 8 + legL, 4, 8, '#1e3250'); // dark blue pants
+                px(-6, 9 + legL, 2, 3, '#2b4770'); // highlight
+                px(-7, 11 + legL, 4, 3, '#333942'); // knee pad
+                px(-6, 12 + legL, 2, 1, '#525b69');
+                px(-8, 16 + legL, 6, 4, '#181b20'); // tactical boot
+                px(-7, 17 + legL, 4, 2, '#2d323b');
+                // Right Leg
+                px(2, 8 + legR, 6, 12, OUT);
+                px(3, 8 + legR, 4, 8, '#1e3250');
+                px(3, 11 + legR, 4, 3, '#333942'); // knee pad
+                px(4, 12 + legR, 2, 1, '#525b69');
+                px(2, 16 + legR, 6, 4, '#181b20'); // boot
+                px(3, 17 + legR, 4, 2, '#2d323b');
+
+                // Tactical Utility Belt
+                px(-8, 5, 16, 4, OUT);
+                px(-7, 6, 14, 2, '#252930');
+                px(-2, 6, 4, 2, '#94a3b8'); // silver buckle
+
+                // Torso & R.P.D. Bulletproof Vest
+                px(-9, -6, 18, 12, OUT);
+                px(-8, -5, 16, 10, '#1d3b66'); // RPD blue uniform base
+                px(-7, -4, 14, 9, '#232832'); // Kevlar black vest
+                px(-6, -3, 12, 5, '#323947'); // Chest plate
+                // Crisp White "R.P.D." pixel letters on chest
+                px(-5, -2, 2, 3, '#f8fafc'); // R
+                px(-2, -2, 2, 3, '#f8fafc'); // P
+                px(2, -2, 2, 3, '#f8fafc');  // D
+                px(5, -1, 1, 1, '#f8fafc');  // .
+
+                // Blue Uniform Collar
+                px(-4, -7, 8, 2, '#244b82');
+                px(-2, -6, 4, 2, '#d99b72'); // neck skin
+
+                // Left Arm & Yellow R.P.D. Shoulder Patch + Grey Elbow Pad
+                px(7, -5, 5, 11, OUT);
+                px(8, -4, 3, 5, '#1d3b66');
+                px(9, -3, 2, 3, '#facc15'); // Yellow RPD emblem patch
+                px(8, 1, 3, 3, '#94a3b8');  // Grey elbow pad
+                px(8, 4, 3, 2, '#1e242b');  // Glove
+
+                // Head & Chiseled Face (Multi-shaded skin)
+                px(-8, -19, 16, 13, OUT);
+                px(-7, -18, 14, 11, '#f3b78b'); // main skin
+                px(-7, -11, 14, 4, '#e09d70');  // jaw shading
+                px(-6, -17, 12, 8, '#f7c59f');  // forehead/cheek highlight
+                // Determined Blue Eyes & Eyebrows
+                px(-6, -14, 4, 1, '#4a2e1b');   // left brow
+                px(2, -14, 4, 1, '#4a2e1b');    // right brow
+                px(-5, -13, 3, 2, '#0f172a');
+                px(-4, -13, 2, 2, '#2563eb');   // blue iris
+                px(-3, -13, 1, 1, '#93c5fd');   // eye glint
+                px(2, -13, 3, 2, '#0f172a');
+                px(3, -13, 2, 2, '#2563eb');
+                px(4, -13, 1, 1, '#93c5fd');
+                // Nose & Mouth
+                px(-1, -11, 2, 2, '#d48b5c');
+                px(-2, -9, 4, 1, '#a85d42');
+
+                // Iconic Leon Swept Brown Hair with strands & highlights
+                px(-9, -23, 18, 6, OUT);
+                px(-8, -22, 16, 5, '#593a24'); // base brown
+                px(-6, -21, 12, 3, '#734d32'); // mid brown highlight
+                px(-4, -21, 6, 2, '#8c6243');  // top shine
+                // Side parted bangs framing face
+                px(-9, -18, 3, 7, OUT);
+                px(-8, -18, 2, 6, '#593a24');
+                px(-5, -18, 2, 5, '#472d1b');  // signature front strand
+                px(6, -18, 3, 6, OUT);
+                px(6, -18, 2, 5, '#593a24');
+                px(4, -18, 2, 4, '#734d32');
+
+            } else if (charId === 'ellie') {
+                // --- HIGH-RES ELLIE (Matches ellie.jpg) ---
+                // Green Survivor Backpack behind torso
+                px(-11, -6, 6, 11, OUT);
+                px(-10, -5, 4, 9, '#2e473b');
+                px(-9, -4, 2, 7, '#3f5e4f');
+
+                // Blue Jeans & Classic Converse Sneakers
+                px(-7, 7 + legL, 5, 12, OUT);
+                px(-6, 7 + legL, 3, 9, '#28466e'); // denim blue
+                px(-5, 9 + legL, 2, 4, '#3b6291'); // knee fade
+                px(-7, 16 + legL, 5, 3, '#1e1b18');
+                px(-6, 17 + legL, 4, 2, '#f8fafc'); // white sneaker toe
+
+                px(2, 7 + legR, 5, 12, OUT);
+                px(3, 7 + legR, 3, 9, '#28466e');
+                px(3, 9 + legR, 2, 4, '#3b6291');
+                px(2, 16 + legR, 5, 3, '#1e1b18');
+                px(3, 17 + legR, 4, 2, '#f8fafc');
+
+                // Red Plaid Flannel Shirt & Dark Inner Shirt
+                px(-8, -6, 16, 13, OUT);
+                px(-7, -5, 14, 11, '#8c2222'); // red flannel base
+                // Tartan plaid dark checks
+                px(-7, -3, 14, 2, '#4a1215');
+                px(-7, 1, 14, 2, '#4a1215');
+                px(-6, -5, 2, 11, '#b83232'); // bright red flannel stripe
+                px(4, -5, 2, 11, '#b83232');
+                // Dark Maroon/Brown Inner Tee
+                px(-3, -5, 6, 10, '#381e24');
+                // Green Backpack Straps over shoulders
+                px(-6, -5, 2, 6, '#395747');
+                px(4, -5, 2, 6, '#395747');
+
+                // Head & Ponytail
+                // Auburn Ponytail on left/back
+                px(-12, -16, 5, 8, OUT);
+                px(-11, -15, 3, 6, '#591c1c');
+                px(-10, -14, 2, 4, '#782828');
+
+                px(-8, -19, 16, 13, OUT);
+                px(-7, -18, 14, 11, '#f7c49c');
+                px(-7, -11, 14, 4, '#e5aa81');
+                // Freckles & Warm Brown Eyes
+                px(-5, -14, 3, 1, '#4a1818');
+                px(2, -14, 3, 1, '#4a1818');
+                px(-5, -13, 3, 2, '#29130e');
+                px(-4, -13, 2, 2, '#692a1c');
+                px(-3, -13, 1, 1, '#ffffff');
+                px(2, -13, 3, 2, '#29130e');
+                px(3, -13, 2, 2, '#692a1c');
+                px(4, -13, 1, 1, '#ffffff');
+                // Cute Freckle dots
+                px(-5, -10, 1, 1, '#c97e59');
+                px(4, -10, 1, 1, '#c97e59');
+                px(-2, -9, 4, 1, '#b05548');
+
+                // Auburn Reddish-Brown Hair & Side Swept Bangs
+                px(-9, -23, 18, 6, OUT);
+                px(-8, -22, 16, 5, '#591c1c');
+                px(-6, -21, 12, 3, '#7a2828');
+                px(-8, -18, 3, 7, '#591c1c');
+                px(5, -18, 3, 6, '#591c1c');
+                px(2, -18, 3, 3, '#7a2828');
+
+            } else if (charId === 'jensen') {
+                // --- HIGH-RES JENSEN HUANG (Matches jensen_2.jpg) ---
+                // Black Jeans & Dress Boots
+                px(-7, 7 + legL, 5, 12, OUT);
+                px(-6, 7 + legL, 3, 10, '#181a20');
+                px(-5, 8 + legL, 1, 7, '#2d313b'); // leg shine
+                px(-7, 16 + legL, 5, 3, '#0d0e12');
+
+                px(2, 7 + legR, 5, 12, OUT);
+                px(3, 7 + legR, 3, 10, '#181a20');
+                px(4, 8 + legR, 1, 7, '#2d313b');
+                px(2, 16 + legR, 5, 3, '#0d0e12');
+
+                // Belt with silver buckle
+                px(-7, 5, 14, 2, '#0d0e12');
+                px(-2, 5, 4, 2, '#94a3b8');
+
+                // Signature Black Leather Biker Jacket with Silver Zippers & Specular Highlights
+                px(-9, -6, 18, 12, OUT);
+                px(-8, -5, 16, 11, '#14171f'); // black leather
+                px(-3, -5, 6, 10, '#1f232e');  // inner black tee
+                // Vertical silver zipper tracks & chest zip pocket
+                px(-4, -4, 1, 9, '#94a3b8');
+                px(3, -4, 1, 9, '#94a3b8');
+                px(-7, -2, 2, 1, '#cbd5e1');
+                px(-7, -4, 1, 7, '#333947');   // leather specular highlight
+
+                // Glowing Neon-Green NVIDIA RTX GPU held up on side!
+                ctx.save();
+                ctx.shadowColor = '#22c55e';
+                ctx.shadowBlur = 10;
+                px(-15, -13, 8, 6, '#22c55e'); // Neon green outer aura
+                ctx.restore();
+                px(-14, -12, 6, 4, '#111827'); // Dark GPU shroud
+                px(-13, -11, 2, 2, '#4ade80'); // Glowing RTX core fan
+                px(-10, -11, 2, 2, '#22c55e');
+
+                // Head & Smiling Face
+                px(-8, -19, 16, 13, OUT);
+                px(-7, -18, 14, 11, '#f0b88e');
+                px(-7, -11, 14, 4, '#dc9e72');
+                px(-4, -16, 8, 1, '#d4956a'); // forehead line
+
+                // Signature Black-Rimmed Glasses
+                px(-8, -14, 16, 2, '#111318'); // top frame bar
+                px(-7, -14, 6, 4, '#111318');  // left rim
+                px(1, -14, 6, 4, '#111318');   // right rim
+                px(-6, -13, 4, 2, '#e2e8f0');  // lens reflection
+                px(-4, -13, 2, 2, '#1e293b');  // pupil
+                px(2, -13, 4, 2, '#e2e8f0');
+                px(3, -13, 2, 2, '#1e293b');
+
+                // Confident Smile
+                px(-3, -9, 6, 1, '#9c523b');
+                px(-4, -10, 1, 1, '#9c523b');
+                px(3, -10, 1, 1, '#9c523b');
+
+                // Iconic Swept Silver-Grey Hair
+                px(-9, -23, 18, 6, OUT);
+                px(-8, -22, 16, 5, '#64748b'); // dark silver base
+                px(-7, -21, 14, 3, '#94a3b8'); // mid silver
+                px(-5, -21, 10, 2, '#cbd5e1'); // bright grey highlight
+                px(-8, -18, 2, 4, '#64748b');
+                px(6, -18, 2, 4, '#64748b');
+
+            } else if (charId === 'elon') {
+                // --- HIGH-RES ELON MUSK (Matches elon_2.jpg) ---
+                // Fuel hose loop on left side for Not-A-Flamethrower
+                px(-12, -2, 4, 7, OUT);
+                px(-11, -1, 2, 5, '#334155');
+
+                // SpaceX Black Flight Suit Legs & Boots
+                px(-7, 7 + legL, 5, 12, OUT);
+                px(-6, 7 + legL, 3, 9, '#1e222d');
+                px(-5, 9 + legL, 2, 3, '#2d3342'); // knee pad highlight
+                px(-7, 16 + legL, 5, 3, '#11131a');
+
+                px(2, 7 + legR, 5, 12, OUT);
+                px(3, 7 + legR, 3, 9, '#1e222d');
+                px(3, 9 + legR, 2, 3, '#2d3342');
+                px(2, 16 + legR, 5, 3, '#11131a');
+
+                // SpaceX Flight Suit Torso with Blue Patch & White 'X' Emblem
+                px(-9, -6, 18, 13, OUT);
+                px(-8, -5, 16, 11, '#1c202b');
+                px(-6, -4, 12, 9, '#252a38');
+                // High Collar
+                px(-5, -7, 10, 2, '#2d3446');
+                // Right Chest Blue Mission Patch
+                px(-5, -3, 3, 2, '#0284c7');
+                px(-4, -2, 2, 1, '#facc15');
+                // Left Chest White SpaceX 'X' Logo
+                px(2, -3, 1, 1, '#f8fafc');
+                px(4, -3, 1, 1, '#f8fafc');
+                px(3, -2, 1, 1, '#f8fafc');
+                px(2, -1, 1, 1, '#f8fafc');
+                px(4, -1, 1, 1, '#f8fafc');
+
+                // Head & Face
+                px(-8, -19, 16, 13, OUT);
+                px(-7, -18, 14, 11, '#f4c098');
+                px(-7, -11, 14, 4, '#e0a57b');
+                px(-6, -17, 12, 7, '#f7cba8');
+                // Eyes & Brows
+                px(-5, -14, 3, 1, '#3b2416');
+                px(2, -14, 3, 1, '#3b2416');
+                px(-5, -13, 3, 2, '#1e293b');
+                px(-4, -13, 2, 2, '#0284c7');
+                px(-3, -13, 1, 1, '#ffffff');
+                px(2, -13, 3, 2, '#1e293b');
+                px(3, -13, 2, 2, '#0284c7');
+                px(4, -13, 1, 1, '#ffffff');
+                // Slight smirk
+                px(-3, -9, 5, 1, '#a35743');
+
+                // Dark Brown Short Cropped Hair
+                px(-9, -23, 18, 5, OUT);
+                px(-8, -22, 16, 4, '#362013');
+                px(-6, -21, 12, 2, '#4d2f1c');
+                px(-8, -18, 2, 4, '#362013');
+                px(6, -18, 2, 3, '#362013');
+            }
+            ctx.restore();
+
+            // Draw Detailed Pixel Weapon in Hands
+            ctx.save();
+            ctx.translate(0, bob * scale);
+            const rot = isPortrait ? 0 : aimAngle;
+            ctx.rotate(rot);
+            if (!isPortrait && Math.abs(rot) > Math.PI / 2) {
+                ctx.scale(1, -1);
+            }
+            drawHighResWeapon(ctx, weaponId, scale, isHurt, isPortrait);
+            ctx.restore();
+
+            ctx.restore();
+        }
+
+        function drawHighResWeapon(ctx, weaponId, scale, isHurt, isPortrait = false) {
+            const px = (gx, gy, gw, gh, color) => {
+                ctx.fillStyle = isHurt ? '#ffffff' : color;
+                ctx.fillRect(Math.round(gx * scale), Math.round(gy * scale), Math.ceil(gw * scale), Math.ceil(gh * scale));
+            };
+            const OUT = '#110d13';
+
+            if (weaponId === 'pistol') {
+                px(5, -3, 9, 5, OUT);
+                px(6, -2, 7, 3, '#475569');
+                px(7, -2, 5, 1, '#94a3b8'); // slide shine
+                px(6, 1, 3, 4, '#1e293b');  // grip
+                px(5, 0, 3, 3, '#f3b78b');  // hand holding
+            } else if (weaponId === 'smg') {
+                px(4, -3, 13, 6, OUT);
+                px(5, -2, 10, 4, '#334155');
+                px(6, -2, 7, 1, '#64748b');
+                px(10, 2, 2, 5, '#0f172a'); // extended mag
+                px(15, -1, 3, 2, '#94a3b8'); // suppressor barrel
+                px(5, 1, 3, 3, '#f3b78b');
+            } else if (weaponId === 'shotgun') {
+                px(1, -3, 18, 6, OUT);
+                px(2, -1, 5, 3, '#78350f');  // wooden stock
+                px(7, -2, 11, 3, '#334155'); // long barrel
+                px(8, -2, 9, 1, '#64748b');
+                px(9, 1, 5, 2, '#92400e');   // pump grip
+                px(5, 0, 3, 3, '#f3b78b');
+            } else if (weaponId === 'sniper') {
+                px(1, -4, 21, 7, OUT);
+                px(2, -1, 6, 3, '#1e3a8a');  // tactical stock
+                px(8, -2, 13, 2, '#475569'); // long precision barrel
+                px(7, -4, 6, 2, '#0f172a');  // scope
+                px(12, -4, 1, 2, '#38bdf8'); // scope lens glint
+                px(5, 0, 3, 3, '#f3b78b');
+            } else if (weaponId === 'flamethrower') {
+                // Not-A-Flamethrower matching Elon reference image
+                px(3, -3, 16, 6, OUT);
+                px(4, -2, 7, 4, '#94a3b8');  // white/silver housing
+                px(8, 0, 3, 1, '#f97316');   // orange stripe
+                px(11, -2, 6, 3, '#475569'); // barrel shroud
+                px(17, -2, 3, 3, '#1e293b'); // muzzle tip
+                // Pilot flame puff
+                px(21, -3, 4, 5, '#f97316');
+                px(22, -2, 2, 3, '#fef08a');
+                px(5, 1, 3, 3, '#f3b78b');
+            } else if (weaponId === 'rocket') {
+                px(-2, -4, 21, 7, OUT);
+                px(-1, -3, 16, 5, '#3f6212'); // olive launcher tube
+                px(1, -2, 12, 1, '#65a30d');
+                px(15, -4, 4, 6, '#dc2626'); // red RPG warhead
+                px(16, -2, 2, 2, '#facc15');
+                px(5, 1, 3, 3, '#f3b78b');
+            }
+        }
+
+        // High-Res Pixel Zombie Renderer (Matches Screenshot: Normal, Runner, Fat Tank, Boss)
+        function drawHighResZombie(ctx, z) {
+            ctx.save();
+            ctx.translate(Math.round(z.x), Math.round(z.y));
+
+            const isWhite = z.flashTimer > 0;
+            const bob = Math.round(Math.sin(z.walkPhase) * 1.5);
+            const legSwing = Math.round(Math.sin(z.walkPhase) * 2.2);
+            const s = z.scale;
+
+            // Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.48)';
+            ctx.beginPath();
+            ctx.ellipse(0, 10 * s, 6.5 * s, 2.5 * s, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.save();
+            if (z.facingLeft) ctx.scale(-1, 1);
+            ctx.translate(0, bob);
+
+            const px = (gx, gy, gw, gh, col) => {
+                ctx.fillStyle = isWhite ? '#ffffff' : col;
+                ctx.fillRect(Math.round(gx * s), Math.round(gy * s), Math.ceil(gw * s), Math.ceil(gh * s));
+            };
+            const OUT = '#120d14';
+
+            if (z.type === 'fatty') {
+                // --- BLOATED FAT TANK ZOMBIE (Matches big green bloated zombie in screenshot) ---
+                // Legs
+                px(-6, 4 + legSwing * 0.4, 5, 5, OUT);
+                px(-5, 4 + legSwing * 0.4, 3, 4, '#5c2d24');
+                px(1, 4 - legSwing * 0.4, 5, 5, OUT);
+                px(2, 4 - legSwing * 0.4, 3, 4, '#5c2d24');
+                // Huge Bloated Belly
+                px(-9, -5, 18, 10, OUT);
+                px(-8, -4, 16, 8, '#849b5c'); // sickly olive green belly
+                px(-6, -3, 12, 6, '#9cb371'); // highlight
+                px(-5, 0, 2, 1, '#58693b');   // belly button / scars
+                // Outstretched Thick Arms
+                px(-11, -4, 3, 5, OUT);
+                px(-10, -3, 2, 4, '#849b5c');
+                px(8, -4, 3, 5, OUT);
+                px(8, -3, 2, 4, '#849b5c');
+                // Round Bald Zombie Head & Bloodied Open Mouth
+                px(-5, -11, 10, 7, OUT);
+                px(-4, -10, 8, 6, '#9cb371');
+                px(-3, -8, 2, 1, '#111');
+                px(1, -8, 2, 1, '#111');
+                px(-2, -6, 4, 2, '#7f1d1d'); // bloody mouth
+
+            } else if (z.type === 'runner') {
+                // --- RED-HAIRED FEMALE RUNNER ZOMBIE (Matches red-haired zombie in screenshot) ---
+                px(-4, 4 + legSwing, 3, 5, OUT);
+                px(-3, 4 + legSwing, 2, 4, '#1e293b');
+                px(1, 4 - legSwing, 3, 5, OUT);
+                px(2, 4 - legSwing, 2, 4, '#1e293b');
+                // Torn Red Top
+                px(-5, -3, 10, 7, OUT);
+                px(-4, -2, 8, 6, '#b91c1c');
+                px(-6, -2, 2, 4, '#8c9c5e'); // arms
+                px(4, -2, 3, 4, '#8c9c5e');
+                // Head & Messy Red Hair
+                px(-5, -10, 10, 7, OUT);
+                px(-4, -9, 8, 6, '#8c9c5e');
+                px(-5, -11, 10, 3, '#9a3412'); // red hair top
+                px(-5, -9, 2, 5, '#9a3412');   // long side hair
+                px(-3, -7, 2, 1, '#dc2626');   // red eyes
+                px(1, -7, 2, 1, '#dc2626');
+                px(-1, -5, 3, 2, '#991b1b');   // bloodied mouth
+
+            } else if (z.type === 'boss') {
+                // --- GIANT TYRANT BOSS ZOMBIE ---
+                px(-6, 4 + legSwing * 0.5, 5, 6, OUT);
+                px(-5, 4 + legSwing * 0.5, 3, 5, '#18181b');
+                px(1, 4 - legSwing * 0.5, 5, 6, OUT);
+                px(2, 4 - legSwing * 0.5, 3, 5, '#18181b');
+                // Armored Dark Trenchcoat & Mutated Red Shoulder
+                px(-9, -6, 18, 11, OUT);
+                px(-8, -5, 16, 9, '#27272a');
+                px(-8, -5, 6, 5, '#991b1b'); // mutated muscle shoulder
+                px(-2, -3, 4, 4, '#ef4444'); // exposed glowing heart core
+                // Giant Claws
+                px(-12, -3, 4, 6, '#7f1d1d');
+                px(8, -3, 4, 6, '#71717a');
+                // Head
+                px(-5, -12, 10, 7, OUT);
+                px(-4, -11, 8, 6, '#71717a');
+                px(-3, -9, 2, 2, '#ef4444'); // glowing red eyes
+                px(1, -9, 2, 2, '#ef4444');
+                px(-2, -7, 4, 1, '#f8fafc'); // teeth
+
+            } else {
+                // --- NORMAL STREET ZOMBIE (Torn White Bloodied Shirt / Brown Jacket matching screenshot) ---
+                px(-4, 4 + legSwing * 0.7, 3, 5, OUT);
+                px(-3, 4 + legSwing * 0.7, 2, 4, '#283c52'); // blue jeans
+                px(1, 4 - legSwing * 0.7, 3, 5, OUT);
+                px(2, 4 - legSwing * 0.7, 2, 4, '#283c52');
+                // Torso (White shirt with bloodstains or brown jacket)
+                px(-5, -3, 10, 7, OUT);
+                const shirtCol = z.variant === 0 ? '#e2e8f0' : '#78553a';
+                px(-4, -2, 8, 6, shirtCol);
+                // Blood splatter on chest
+                px(-2, -1, 3, 3, '#b91c1c');
+                px(0, 1, 2, 2, '#991b1b');
+                // Outstretched Zombie Arms
+                px(-7, -2, 3, 3, '#849b5c');
+                px(4, -2, 4, 3, '#849b5c');
+                // Greenish Zombie Head with hollow dark eye sockets & open mouth
+                px(-5, -10, 10, 7, OUT);
+                px(-4, -9, 8, 6, '#849b5c');
+                px(-3, -8, 6, 4, '#9cb371');
+                px(-3, -7, 2, 2, '#1e1b18'); // hollow eye
+                px(1, -7, 2, 2, '#1e1b18');
+                px(-1, -5, 3, 2, '#7f1d1d'); // bloody mouth
+            }
+
+            ctx.restore();
+
+            // HP Bar if damaged or Boss
+            if (z.hp < z.maxHp || z.type === 'boss') {
+                const bw = z.type === 'boss' ? 68 : 28;
+                const bh = z.type === 'boss' ? 6 : 4;
+                const by = -12 * s - 6;
+                ctx.fillStyle = 'rgba(0,0,0,0.8)';
+                ctx.fillRect(-bw / 2, by, bw, bh);
+                ctx.fillStyle = z.type === 'boss' ? '#f43f5e' : '#ef4444';
+                ctx.fillRect(-bw / 2, by, bw * Math.max(0, z.hp / z.maxHp), bh);
+            }
+
+            ctx.restore();
+        }
+
+        // ------------------------------------------------------------------
+        // 4. WEAPONS & ARMOR DEFINITIONS
+        // ------------------------------------------------------------------
+        const WEAPONS = {
+            pistol: {
+                id: 'pistol',
+                name: '制式手槍',
+                shortName: '手槍',
+                icon: '🔫',
+                desc: '平衡穩定，精準點射最近殭屍',
+                price: 0,
+                fireInterval: 0.33,
+                damage: 25,
+                speed: 640,
+                pellets: 1,
+                spread: 0.04,
+                pierce: 1,
+                range: 520,
+                color: '#fde047'
+            },
+            shotgun: {
+                id: 'shotgun',
+                name: '泵動霰彈槍',
+                shortName: '霰彈槍',
+                icon: '💥',
+                desc: '近距離一次射出 6 發鹿彈，瞬間擊退貼臉殭屍',
+                price: 55,
+                fireInterval: 0.66,
+                damage: 21,
+                speed: 560,
+                pellets: 6,
+                spread: 0.42,
+                pierce: 1,
+                range: 360,
+                color: '#fb923c'
+            },
+            smg: {
+                id: 'smg',
+                name: '戰術衝鋒槍',
+                shortName: '衝鋒槍',
+                icon: '⚡',
+                desc: '高射速彈幕壓制，近中距離快速清怪',
+                price: 40,
+                fireInterval: 0.10,
+                damage: 14,
+                speed: 680,
+                pellets: 1,
+                spread: 0.22,
+                pierce: 1,
+                range: 480,
+                color: '#facc15'
+            },
+            rocket: {
+                id: 'rocket',
+                name: '重型火箭炮',
+                shortName: '火箭炮',
+                icon: '🚀',
+                desc: '發射高爆 RPG 火箭，命中產生大範圍毀滅爆炸',
+                price: 170,
+                fireInterval: 1.20,
+                damage: 175,
+                speed: 460,
+                pellets: 1,
+                spread: 0.03,
+                pierce: 1,
+                range: 640,
+                explosionRadius: 130,
+                color: '#ef4444'
+            },
+            sniper: {
+                id: 'sniper',
+                name: '穿透狙擊槍',
+                shortName: '狙擊槍',
+                icon: '🎯',
+                desc: '超高單發傷害，子彈直線貫穿最多 5 隻殭屍',
+                price: 95,
+                fireInterval: 0.82,
+                damage: 98,
+                speed: 980,
+                pellets: 1,
+                spread: 0.01,
+                pierce: 5,
+                range: 740,
+                color: '#38bdf8'
+            },
+            flamethrower: {
+                id: 'flamethrower',
+                name: '火焰噴射槍',
+                shortName: '火焰槍',
+                icon: '🔥',
+                desc: '範圍持續噴射高溫烈焰，穿透並灼燒前方屍群',
+                price: 125,
+                fireInterval: 0.06,
+                damage: 8,
+                speed: 370,
+                pellets: 2,
+                spread: 0.34,
+                pierce: 99,
+                range: 260,
+                isFlame: true,
+                color: '#f97316'
+            }
+        };
+
+        const WEAPON_WHEEL_ORDER = ['pistol', 'smg', 'rocket', 'shotgun', 'sniper', 'flamethrower'];
+
+        const ARMORS = [
+            { id: 'none', name: '街頭便服', desc: '開局服裝，零負擔', price: 0, dmgReduction: 0, speedMult: 1.0 },
+            { id: 'light', name: '輕便防彈背心', desc: '減傷 20%・移動速度 +8%', price: 45, dmgReduction: 0.20, speedMult: 1.08 },
+            { id: 'heavy', name: 'R.P.D. 重型防暴甲', desc: '減傷 45%・移動速度 -6%', price: 90, dmgReduction: 0.45, speedMult: 0.94 },
+            { id: 'exo', name: '動力外骨骼戰甲', desc: '減傷 55%・移動速度 +15%', price: 160, dmgReduction: 0.55, speedMult: 1.15 }
+        ];
+
+        // ------------------------------------------------------------------
+        // 5. ADMIN TUNING PARAMETERS
+        // ------------------------------------------------------------------
+        const DEFAULT_TUNING = {
+            playerMaxHp: 100,
+            playerMoveSpeed: 210,
+            bulletDmgMult: 1.0,
+            fireRateMult: 1.0,
+            zombieHpMult: 1.0,
+            zombieSpeedMult: 1.0,
+            spawnRateMult: 1.0
+        };
+        let tuning = { ...DEFAULT_TUNING };
+
+        // ------------------------------------------------------------------
+        // 6. WORLD MAP GENERATION (Matches Screenshot Dusk Street & Neon Storefronts)
+        // ------------------------------------------------------------------
+        const WORLD_SIZE = 2400;
+        let buildings = [];
+        let wreckedCars = [];
+        let streetLamps = [];
+        let shops = [];
+        let chests = [];
+        let bloodPools = [];
+        let roadCracks = [];
+
+        function generateDuskStreetWorld() {
+            buildings = [];
+            wreckedCars = [];
+            streetLamps = [];
+            shops = [];
+            chests = [];
+            bloodPools = [];
+            roadCracks = [];
+
+            // Random asphalt crack details
+            for (let i = 0; i < 45; i++) {
+                roadCracks.push({
+                    x: 150 + Math.random() * (WORLD_SIZE - 300),
+                    y: 150 + Math.random() * (WORLD_SIZE - 300),
+                    seed: Math.floor(Math.random() * 100)
+                });
+            }
+
+            // Storefront Buildings along Left & Right sides of the Vertical Main Avenue & Outer Quadrants
+            const storeConfigs = [
+                { x: 120, y: 140, w: 300, h: 240, name: '港雜貨店', vSign: '港雜貨店', vSignCol: '#d946ef', awning: '#991b1b' },
+                { x: 500, y: 140, w: 280, h: 240, name: 'SWEET 冰室', hSign: 'SWEET', hSignCol: '#f43f5e', awning: '#dc2626' },
+                { x: 120, y: 480, w: 300, h: 280, name: '港雜貨店', vSign: '港雜貨店', vSignCol: '#c084fc', awning: '#b91c1c' },
+                { x: 1620, y: 140, w: 280, h: 240, name: 'SWEET 甜品', hSign: 'SWEET', hSignCol: '#ec4899', awning: '#dc2626' },
+                { x: 1960, y: 140, w: 300, h: 240, name: '速食店', vSign: '速食店', vSignCol: '#f97316', awning: '#b45309' },
+                { x: 1960, y: 480, w: 300, h: 280, name: 'SAT 快餐', vSign: '速食店', vSignCol: '#ef4444', hSign: 'SAT', awning: '#991b1b' },
+
+                { x: 120, y: 1620, w: 300, h: 280, name: '旺角大藥房', vSign: '大藥房', vSignCol: '#22c55e', awning: '#15803d' },
+                { x: 120, y: 1980, w: 300, h: 240, name: '港雜貨店', vSign: '港雜貨店', vSignCol: '#d946ef', awning: '#991b1b' },
+                { x: 500, y: 1980, w: 280, h: 240, name: '紅磡茶餐廳', hSign: 'CAFE', hSignCol: '#fbbf24', awning: '#b45309' },
+                { x: 1620, y: 1980, w: 280, h: 240, name: '深水埗電玩', hSign: 'GAME', hSignCol: '#38bdf8', awning: '#1d4ed8' },
+                { x: 1960, y: 1620, w: 300, h: 280, name: '速食店', vSign: '速食店', vSignCol: '#f97316', hSign: 'SAT', awning: '#991b1b' },
+                { x: 1960, y: 1980, w: 300, h: 240, name: '五金建材行', vSign: '五金行', vSignCol: '#eab308', awning: '#78350f' }
+            ];
+            buildings.push(...storeConfigs);
+
+            // 4 Interactive "SHOP" Armored Vans (Matches the blue van with glowing pink/purple "SHOP" roof sign in screenshot)
+            const shopVanPositions = [
+                { x: 1320, y: 1020 }, // Right near player start on main vertical road!
+                { x: 860, y: 860 },
+                { x: 1540, y: 1540 },
+                { x: 860, y: 1540 }
+            ];
+            shopVanPositions.forEach((pos, idx) => {
+                shops.push({
+                    x: pos.x,
+                    y: pos.y,
+                    w: 134,
+                    h: 84,
+                    radius: 95,
+                    name: `SHOP 裝甲補給車 #${idx + 1}`
+                });
+            });
+
+            // Streetlamps lining both sidewalks with warm amber light pools
+            const lampOffsets = [260, 520, 780, 1040, 1360, 1620, 1880, 2140];
+            lampOffsets.forEach(pos => {
+                streetLamps.push({ x: 965, y: pos, side: 'left' });
+                streetLamps.push({ x: 1435, y: pos, side: 'right' });
+                if (pos < 900 || pos > 1500) {
+                    streetLamps.push({ x: pos, y: 965, side: 'top' });
+                    streetLamps.push({ x: pos, y: 1435, side: 'bottom' });
+                }
+            });
+
+            // Detailed Wrecked Cars (Matches rusted brown/blue/orange sedans in screenshot)
+            const carSpecs = [
+                { x: 1070, y: 1080, angle: -0.28, color: '#6b5b52', roof: '#52443c' },
+                { x: 1090, y: 1350, angle: 0.32, color: '#b4532a', roof: '#8c3d1e' },
+                { x: 1290, y: 1390, angle: -0.22, color: '#3b4a5e', roof: '#283342' },
+                { x: 1270, y: 860, angle: 0.18, color: '#70584a', roof: '#544136' },
+                { x: 740, y: 1140, angle: 0.25, color: '#991b1b', roof: '#7f1d1d' },
+                { x: 1660, y: 1250, angle: -0.35, color: '#1e3a8a', roof: '#172554' },
+                { x: 1140, y: 620, angle: 1.35, color: '#3f3f46', roof: '#27272a' },
+                { x: 1280, y: 1760, angle: -1.4, color: '#b45309', roof: '#78350f' }
+            ];
+            carSpecs.forEach(c => {
+                wreckedCars.push({
+                    ...c,
+                    w: 84,
+                    h: 46,
+                    radius: 34
+                });
+            });
+
+            // Spawn glowing golden pixel treasure chests (including 2 close to start area like screenshot)
+            chests.push({ x: 1265, y: 1105, radius: 24, healAmount: 35, bobPhase: 0 });
+            chests.push({ x: 1045, y: 960, radius: 24, healAmount: 35, bobPhase: 1.5 });
+            for (let i = 0; i < 6; i++) {
+                spawnRandomChest();
+            }
+        }
+
+        function spawnRandomChest() {
+            if (chests.length >= 9) return;
+            for (let attempt = 0; attempt < 25; attempt++) {
+                const cx = 200 + Math.random() * (WORLD_SIZE - 400);
+                const cy = 200 + Math.random() * (WORLD_SIZE - 400);
+                if (!isPointBlocked(cx, cy, 38)) {
+                    chests.push({
+                        x: cx,
+                        y: cy,
+                        radius: 24,
+                        healAmount: 35,
+                        bobPhase: Math.random() * Math.PI * 2
+                    });
+                    break;
+                }
+            }
+        }
+
+        function isPointBlocked(x, y, radius = 16) {
+            if (x < 64 + radius || x > WORLD_SIZE - 64 - radius || y < 64 + radius || y > WORLD_SIZE - 64 - radius) {
+                return true;
+            }
+            for (const b of buildings) {
+                if (x + radius > b.x && x - radius < b.x + b.w && y + radius > b.y && y - radius < b.y + b.h) {
+                    return true;
+                }
+            }
+            for (const c of wreckedCars) {
+                const dx = x - c.x;
+                const dy = y - c.y;
+                if (dx * dx + dy * dy < (radius + c.radius) * (radius + c.radius)) {
+                    return true;
+                }
+            }
+            for (const s of shops) {
+                if (x + radius > s.x - s.w / 2 && x - radius < s.x + s.w / 2 && y + radius > s.y - s.h / 2 && y - radius < s.y + s.h / 2) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // ------------------------------------------------------------------
+        // 7. GAME STATE & ENTITIES
+        // ------------------------------------------------------------------
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let selectedCharId = 'leon';
+        let gameState = 'START';
+        let survivalTime = 0;
+        let killCount = 0;
+        let spawnTimer = 0;
+        let chestSpawnTimer = 0;
+        let nextBossTime = 300;
+
+        let player = null;
+        let zombies = [];
+        let bullets = [];
+        let coins = [];
+        let particles = [];
+        let hitBursts = [];
+        let floatingTexts = [];
+        let muzzleFlashes = [];
+
+        let camera = { x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 };
+        let screenShake = 0;
+        let nearShopRef = null;
+        let shopCooldownOut = false;
+
+        function initNewGame() {
+            generateDuskStreetWorld();
+            survivalTime = 0;
+            killCount = 0;
+            spawnTimer = 0;
+            chestSpawnTimer = 0;
+            nextBossTime = 300;
+
+            zombies = [];
+            bullets = [];
+            coins = [];
+            particles = [];
+            hitBursts = [];
+            floatingTexts = [];
+            muzzleFlashes = [];
+
+            player = {
+                x: 1185,
+                y: 1200,
+                radius: 16,
+                charId: selectedCharId,
+                hp: tuning.playerMaxHp,
+                maxHp: tuning.playerMaxHp,
+                baseSpeed: tuning.playerMoveSpeed,
+                coins: 0,
+                currentWeapon: 'pistol',
+                ownedWeapons: ['pistol'],
+                currentArmor: 'none',
+                ownedArmors: ['none'],
+                fireTimer: 0,
+                invincibleTimer: 0,
+                walkCycle: 0,
+                facingLeft: false,
+                aimAngle: 0
+            };
+
+            camera.x = player.x - canvas.width / 2;
+            camera.y = player.y - canvas.height / 2;
+
+            // Spawn starter zombies around the street
+            for (let i = 0; i < 7; i++) {
+                spawnZombie('normal');
+            }
+
+            updateHudUI();
+            drawWeaponWheel();
+            gameState = 'PLAYING';
+
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOverModal').classList.add('hidden');
+            document.getElementById('shopModal').classList.add('hidden');
+            document.getElementById('gameHud').classList.remove('hidden');
+            document.getElementById('joystickZone').classList.remove('hidden');
+            document.getElementById('weaponWheelZone').classList.remove('hidden');
+        }
+
+        // ------------------------------------------------------------------
+        // 8. ZOMBIE SPAWNING & SCALING SYSTEM
+        // ------------------------------------------------------------------
+        function getFiveMinHpScaling() {
+            const fiveMinCycles = Math.floor(survivalTime / 300);
+            return Math.pow(1.10, fiveMinCycles);
+        }
+
+        function spawnZombie(forcedType = null) {
+            if (zombies.length >= 60 && forcedType !== 'boss') return;
+
+            const scaling = getFiveMinHpScaling() * tuning.zombieHpMult;
+            let type = forcedType;
+
+            if (!type) {
+                const r = Math.random();
+                if (survivalTime >= 180) {
+                    if (r < 0.24) type = 'fatty';
+                    else if (r < 0.56) type = 'runner';
+                    else type = 'normal';
+                } else if (survivalTime >= 60) {
+                    if (r < 0.38) type = 'runner';
+                    else type = 'normal';
+                } else {
+                    type = 'normal';
+                }
+            }
+
+            const viewW = canvas.width;
+            const viewH = canvas.height;
+            const margin = 70;
+            let zx, zy;
+            const side = Math.floor(Math.random() * 4);
+            if (side === 0) {
+                zx = camera.x + Math.random() * viewW;
+                zy = camera.y - margin;
+            } else if (side === 1) {
+                zx = camera.x + Math.random() * viewW;
+                zy = camera.y + viewH + margin;
+            } else if (side === 2) {
+                zx = camera.x - margin;
+                zy = camera.y + Math.random() * viewH;
+            } else {
+                zx = camera.x + viewW + margin;
+                zy = camera.y + Math.random() * viewH;
+            }
+
+            zx = Math.max(95, Math.min(WORLD_SIZE - 95, zx));
+            zy = Math.max(95, Math.min(WORLD_SIZE - 95, zy));
+
+            let stats;
+            if (type === 'normal') {
+                stats = {
+                    type: 'normal',
+                    variant: Math.random() < 0.5 ? 0 : 1,
+                    hp: Math.round(50 * scaling),
+                    maxHp: Math.round(50 * scaling),
+                    speed: (72 + Math.random() * 15) * tuning.zombieSpeedMult,
+                    radius: 16,
+                    scale: 2.3,
+                    coinDropChance: 0.75,
+                    coinValue: 10
+                };
+            } else if (type === 'runner') {
+                stats = {
+                    type: 'runner',
+                    variant: 0,
+                    hp: Math.round(28 * scaling),
+                    maxHp: Math.round(28 * scaling),
+                    speed: (146 + Math.random() * 20) * tuning.zombieSpeedMult,
+                    radius: 14,
+                    scale: 2.2,
+                    coinDropChance: 0.80,
+                    coinValue: 12
+                };
+            } else if (type === 'fatty') {
+                stats = {
+                    type: 'fatty',
+                    variant: 0,
+                    hp: Math.round(180 * scaling),
+                    maxHp: Math.round(180 * scaling),
+                    speed: (50 + Math.random() * 10) * tuning.zombieSpeedMult,
+                    radius: 24,
+                    scale: 2.9,
+                    coinDropChance: 0.95,
+                    coinValue: 25
+                };
+            } else if (type === 'boss') {
+                stats = {
+                    type: 'boss',
+                    variant: 0,
+                    hp: Math.round(1100 * scaling),
+                    maxHp: Math.round(1100 * scaling),
+                    speed: 68 * tuning.zombieSpeedMult,
+                    radius: 32,
+                    scale: 3.8,
+                    coinDropChance: 1.0,
+                    coinValue: 100
+                };
+                showBossBanner();
+                sfx.playBossAlarm();
+            }
+
+            zombies.push({
+                x: zx,
+                y: zy,
+                ...stats,
+                facingLeft: false,
+                biteTimer: 0,
+                flashTimer: 0,
+                walkPhase: Math.random() * 10,
+                knockVx: 0,
+                knockVy: 0
+            });
+        }
+
+        function showBossBanner() {
+            const el = document.getElementById('bossWarning');
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 4500);
+        }
+
+        // ------------------------------------------------------------------
+        // 9. CONTROLS & RADIAL WEAPON WHEEL (Bottom-Right)
+        // ------------------------------------------------------------------
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (gameState === 'PLAYING' && player) {
+                const digitMap = {
+                    'Digit1': 'pistol',
+                    'Digit2': 'smg',
+                    'Digit3': 'shotgun',
+                    'Digit4': 'sniper',
+                    'Digit5': 'flamethrower',
+                    'Digit6': 'rocket'
+                };
+                const targetWep = digitMap[e.code];
+                if (targetWep && player.ownedWeapons.includes(targetWep)) {
+                    player.currentWeapon = targetWep;
+                    drawWeaponWheel();
+                    updateHudUI();
+                }
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        // Bottom-Left Virtual Joystick
+        let joyActive = false;
+        let joyTouchId = null;
+        let joyVec = { x: 0, y: 0 };
+        const joystickZone = document.getElementById('joystickZone');
+        const joystickBase = document.getElementById('joystickBase');
+        const joystickKnob = document.getElementById('joystickKnob');
+
+        function handleJoystickMove(clientX, clientY) {
+            const rect = joystickBase.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const maxDist = rect.width / 2 - 12;
+
+            let dx = clientX - centerX;
+            let dy = clientY - centerY;
+            const dist = Math.hypot(dx, dy);
+
+            if (dist > maxDist) {
+                dx = (dx / dist) * maxDist;
+                dy = (dy / dist) * maxDist;
+            }
+
+            joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            joyVec.x = dx / maxDist;
+            joyVec.y = dy / maxDist;
+        }
+
+        function resetJoystick() {
+            joyActive = false;
+            joyTouchId = null;
+            joyVec.x = 0;
+            joyVec.y = 0;
+            joystickKnob.style.transform = `translate(0px, 0px)`;
+        }
+
+        joystickZone.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            sfx.init();
+            const touch = e.changedTouches[0];
+            joyActive = true;
+            joyTouchId = touch.identifier;
+            handleJoystickMove(touch.clientX, touch.clientY);
+        }, { passive: false });
+
+        window.addEventListener('touchmove', (e) => {
+            if (!joyActive) return;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                const t = e.changedTouches[i];
+                if (t.identifier === joyTouchId) {
+                    handleJoystickMove(t.clientX, t.clientY);
+                    break;
+                }
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchend', (e) => {
+            if (!joyActive) return;
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === joyTouchId) {
+                    resetJoystick();
+                    break;
+                }
+            }
+        });
+
+        joystickZone.addEventListener('mousedown', (e) => {
+            sfx.init();
+            joyActive = true;
+            handleJoystickMove(e.clientX, e.clientY);
+        });
+        window.addEventListener('mousemove', (e) => {
+            if (joyActive && joyTouchId === null) handleJoystickMove(e.clientX, e.clientY);
+        });
+        window.addEventListener('mouseup', () => {
+            if (joyActive && joyTouchId === null) resetJoystick();
+        });
+
+        // Bottom-Right Radial Weapon Selector Wheel (Matches Screenshot)
+        const wheelCanvas = document.getElementById('weaponWheelCanvas');
+        const wheelCtx = wheelCanvas.getContext('2d');
+
+        function drawWeaponWheel() {
+            if (!player) return;
+            const w = wheelCanvas.width;
+            const h = wheelCanvas.height;
+            const cx = w / 2;
+            const cy = h / 2;
+            const outerR = w / 2 - 6;
+            const innerR = 30;
+
+            wheelCtx.clearRect(0, 0, w, h);
+
+            const slots = WEAPON_WHEEL_ORDER;
+            const sliceAngle = (Math.PI * 2) / slots.length;
+
+            slots.forEach((wepId, index) => {
+                const startAng = -Math.PI / 2 - sliceAngle / 2 + index * sliceAngle;
+                const endAng = startAng + sliceAngle;
+                const midAng = (startAng + endAng) / 2;
+
+                const isOwned = player.ownedWeapons.includes(wepId);
+                const isSelected = player.currentWeapon === wepId;
+
+                wheelCtx.save();
+                wheelCtx.beginPath();
+                wheelCtx.arc(cx, cy, outerR, startAng, endAng);
+                wheelCtx.arc(cx, cy, innerR, endAng, startAng, true);
+                wheelCtx.closePath();
+
+                if (isSelected) {
+                    wheelCtx.fillStyle = 'rgba(245, 158, 11, 0.55)';
+                } else if (isOwned) {
+                    wheelCtx.fillStyle = 'rgba(24, 20, 34, 0.72)';
+                } else {
+                    wheelCtx.fillStyle = 'rgba(12, 10, 18, 0.45)';
+                }
+                wheelCtx.fill();
+
+                wheelCtx.lineWidth = isSelected ? 2.5 : 1.5;
+                wheelCtx.strokeStyle = isSelected ? '#fde047' : 'rgba(226, 232, 240, 0.35)';
+                wheelCtx.stroke();
+
+                // Draw pixel weapon icon inside sector
+                const iconDist = (outerR + innerR) / 2;
+                const ix = cx + Math.cos(midAng) * iconDist;
+                const iy = cy + Math.sin(midAng) * iconDist;
+
+                wheelCtx.save();
+                wheelCtx.translate(ix, iy);
+                wheelCtx.globalAlpha = isOwned ? 1.0 : 0.32;
+                drawMiniWheelWeaponIcon(wheelCtx, wepId);
+                wheelCtx.restore();
+
+                wheelCtx.restore();
+            });
+
+            // Center Hub Circle showing active weapon name
+            wheelCtx.beginPath();
+            wheelCtx.arc(cx, cy, innerR - 2, 0, Math.PI * 2);
+            wheelCtx.fillStyle = 'rgba(18, 14, 26, 0.9)';
+            wheelCtx.fill();
+            wheelCtx.lineWidth = 2;
+            wheelCtx.strokeStyle = 'rgba(251, 191, 36, 0.75)';
+            wheelCtx.stroke();
+
+            const activeWep = WEAPONS[player.currentWeapon] || WEAPONS.pistol;
+            wheelCtx.fillStyle = '#fde047';
+            wheelCtx.font = 'bold 11px "Noto Sans TC", sans-serif';
+            wheelCtx.textAlign = 'center';
+            wheelCtx.textBaseline = 'middle';
+            wheelCtx.fillText(activeWep.shortName, cx, cy);
+        }
+
+        function drawMiniWheelWeaponIcon(c, wepId) {
+            c.imageSmoothingEnabled = false;
+            const p = (x, y, w, h, col) => {
+                c.fillStyle = col;
+                c.fillRect(x * 2, y * 2, w * 2, h * 2);
+            };
+            if (wepId === 'pistol') {
+                p(-4, -3, 8, 3, '#94a3b8');
+                p(-4, 0, 3, 4, '#475569');
+            } else if (wepId === 'shotgun') {
+                p(-8, -1, 5, 3, '#92400e');
+                p(-3, -2, 11, 2, '#94a3b8');
+                p(-1, 0, 4, 2, '#78350f');
+            } else if (wepId === 'smg') {
+                p(-6, -2, 11, 3, '#64748b');
+                p(-1, 1, 2, 4, '#334155');
+                p(5, -1, 3, 1, '#cbd5e1');
+            } else if (wepId === 'rocket') {
+                p(-7, -2, 11, 3, '#65a30d');
+                p(4, -3, 4, 5, '#ef4444');
+                p(6, -1, 2, 1, '#fde047');
+            } else if (wepId === 'sniper') {
+                p(-8, -1, 16, 2, '#94a3b8');
+                p(-3, -3, 5, 2, '#38bdf8');
+                p(-7, 1, 4, 2, '#1e3a8a');
+            } else if (wepId === 'flamethrower') {
+                p(-6, -2, 8, 3, '#cbd5e1');
+                p(2, -2, 4, 2, '#f97316');
+                p(6, -3, 3, 4, '#fde047');
+            }
+        }
+
+        function handleWheelTap(clientX, clientY) {
+            if (!player || gameState !== 'PLAYING') return;
+            const rect = wheelCanvas.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+            const dx = clientX - cx;
+            const dy = clientY - cy;
+            const dist = Math.hypot(dx, dy);
+            if (dist < 16 || dist > rect.width / 2) return;
+
+            const sliceAngle = (Math.PI * 2) / WEAPON_WHEEL_ORDER.length;
+            let ang = Math.atan2(dy, dx) - (-Math.PI / 2 - sliceAngle / 2);
+            while (ang < 0) ang += Math.PI * 2;
+            while (ang >= Math.PI * 2) ang -= Math.PI * 2;
+
+            const idx = Math.floor(ang / sliceAngle) % WEAPON_WHEEL_ORDER.length;
+            const chosenId = WEAPON_WHEEL_ORDER[idx];
+            if (player.ownedWeapons.includes(chosenId)) {
+                player.currentWeapon = chosenId;
+                sfx.playCoin();
+                drawWeaponWheel();
+                updateHudUI();
+            } else {
+                spawnFloatingText(player.x, player.y - 25, `🚐 請到 SHOP 購買 ${WEAPONS[chosenId].shortName}`, '#f43f5e');
+            }
+        }
+
+        wheelCanvas.addEventListener('click', (e) => {
+            handleWheelTap(e.clientX, e.clientY);
+        });
+        wheelCanvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const t = e.changedTouches[0];
+            handleWheelTap(t.clientX, t.clientY);
+        }, { passive: false });
+
+        // ------------------------------------------------------------------
+        // 10. MAIN GAME UPDATE LOOP
+        // ------------------------------------------------------------------
+        function updateGame(dt) {
+            if (gameState !== 'PLAYING' || !player) return;
+
+            survivalTime += dt;
+
+            if (survivalTime >= nextBossTime) {
+                spawnZombie('boss');
+                nextBossTime += 300;
+            }
+
+            const baseInterval = Math.max(0.28, 1.42 - (survivalTime / 240) * 0.95);
+            const effectiveInterval = baseInterval / tuning.spawnRateMult;
+            spawnTimer += dt;
+            if (spawnTimer >= effectiveInterval) {
+                spawnTimer = 0;
+                spawnZombie();
+            }
+
+            chestSpawnTimer += dt;
+            if (chestSpawnTimer >= 15) {
+                chestSpawnTimer = 0;
+                spawnRandomChest();
+            }
+
+            // Player Movement
+            let mx = joyVec.x;
+            let my = joyVec.y;
+            if (keys['KeyW'] || keys['ArrowUp']) my -= 1;
+            if (keys['KeyS'] || keys['ArrowDown']) my += 1;
+            if (keys['KeyA'] || keys['ArrowLeft']) mx -= 1;
+            if (keys['KeyD'] || keys['ArrowRight']) mx += 1;
+
+            const mag = Math.hypot(mx, my);
+            if (mag > 1) {
+                mx /= mag;
+                my /= mag;
+            }
+
+            const armorObj = ARMORS.find(a => a.id === player.currentArmor) || ARMORS[0];
+            const moveSpeed = player.baseSpeed * armorObj.speedMult;
+
+            if (Math.hypot(mx, my) > 0.05) {
+                const nextX = player.x + mx * moveSpeed * dt;
+                const nextY = player.y + my * moveSpeed * dt;
+                if (!isPointBlocked(nextX, player.y, player.radius)) player.x = nextX;
+                if (!isPointBlocked(player.x, nextY, player.radius)) player.y = nextY;
+                player.walkCycle += dt;
+                if (mx < -0.1) player.facingLeft = true;
+                else if (mx > 0.1) player.facingLeft = false;
+            } else {
+                player.walkCycle = 0;
+            }
+
+            // Smooth Camera Follow
+            const targetCamX = player.x - canvas.width / 2;
+            const targetCamY = player.y - canvas.height / 2;
+            camera.x += (targetCamX - camera.x) * Math.min(1, dt * 8);
+            camera.y += (targetCamY - camera.y) * Math.min(1, dt * 8);
+
+            if (canvas.width < WORLD_SIZE) camera.x = Math.max(0, Math.min(WORLD_SIZE - canvas.width, camera.x));
+            if (canvas.height < WORLD_SIZE) camera.y = Math.max(0, Math.min(WORLD_SIZE - canvas.height, camera.y));
+
+            if (screenShake > 0) screenShake = Math.max(0, screenShake - dt * 28);
+            if (player.invincibleTimer > 0) player.invincibleTimer = Math.max(0, player.invincibleTimer - dt);
+
+            // Auto-aim at nearest zombie
+            let closestZombie = null;
+            let minDistSq = Infinity;
+            for (const z of zombies) {
+                const dx = z.x - player.x;
+                const dy = z.y - player.y;
+                const dSq = dx * dx + dy * dy;
+                if (dSq < minDistSq) {
+                    minDistSq = dSq;
+                    closestZombie = z;
+                }
+            }
+
+            const weapon = WEAPONS[player.currentWeapon] || WEAPONS.pistol;
+            player.fireTimer -= dt;
+
+            if (closestZombie && minDistSq <= (weapon.range * weapon.range)) {
+                player.aimAngle = Math.atan2(closestZombie.y - player.y, closestZombie.x - player.x);
+                player.facingLeft = Math.abs(player.aimAngle) > Math.PI / 2;
+
+                if (player.fireTimer <= 0) {
+                    player.fireTimer = weapon.fireInterval / tuning.fireRateMult;
+                    fireWeapon(weapon, player.aimAngle);
+                }
+            }
+
+            // Chest Proximity
+            for (let i = chests.length - 1; i >= 0; i--) {
+                const c = chests[i];
+                c.bobPhase += dt * 4;
+                const dist = Math.hypot(player.x - c.x, player.y - c.y);
+                if (dist < player.radius + c.radius + 12) {
+                    const heal = c.healAmount;
+                    player.hp = Math.min(player.maxHp, player.hp + heal);
+                    sfx.playChestHeal();
+                    spawnFloatingText(c.x, c.y - 12, `📦 +${heal} HP`, '#4ade80');
+                    for (let p = 0; p < 14; p++) {
+                        particles.push({
+                            x: c.x,
+                            y: c.y,
+                            vx: (Math.random() - 0.5) * 150,
+                            vy: (Math.random() - 0.5) * 150,
+                            size: 4,
+                            color: '#fde047',
+                            life: 0.45,
+                            maxLife: 0.45
+                        });
+                    }
+                    chests.splice(i, 1);
+                }
+            }
+
+            // Shop Van Proximity
+            nearShopRef = null;
+            for (const s of shops) {
+                const d = Math.hypot(player.x - s.x, player.y - s.y);
+                if (d < s.radius) {
+                    nearShopRef = s;
+                    break;
+                }
+            }
+            const shopPromptEl = document.getElementById('shopPrompt');
+            if (nearShopRef) {
+                shopPromptEl.classList.remove('hidden');
+                if (!shopCooldownOut) {
+                    shopCooldownOut = true;
+                    openShopMenu();
+                    return;
+                }
+            } else {
+                shopPromptEl.classList.add('hidden');
+                shopCooldownOut = false;
+            }
+
+            // Bullets Update
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                b.traveled += Math.hypot(b.vx * dt, b.vy * dt);
+
+                if (b.isFlame) b.radius += dt * 26;
+
+                let hitWall = false;
+                for (const bld of buildings) {
+                    if (b.x > bld.x && b.x < bld.x + bld.w && b.y > bld.y && b.y < bld.y + bld.h) {
+                        hitWall = true;
+                        break;
+                    }
+                }
+
+                if (hitWall || b.traveled >= b.maxRange) {
+                    if (b.explosionRadius && hitWall) {
+                        triggerExplosion(b.x, b.y, b.explosionRadius, b.damage);
+                    }
+                    bullets.splice(i, 1);
+                    continue;
+                }
+
+                for (let j = zombies.length - 1; j >= 0; j--) {
+                    const z = zombies[j];
+                    if (b.hitSet.has(z)) continue;
+                    const dist = Math.hypot(b.x - z.x, b.y - z.y);
+                    if (dist < b.radius + z.radius) {
+                        b.hitSet.add(z);
+
+                        if (b.explosionRadius) {
+                            triggerExplosion(b.x, b.y, b.explosionRadius, b.damage);
+                            b.pierceLeft = 0;
+                        } else {
+                            damageZombie(z, b.damage, Math.atan2(b.vy, b.vx), b.isFlame ? 18 : 95);
+                            b.pierceLeft--;
+                        }
+
+                        if (b.pierceLeft <= 0) {
+                            bullets.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Zombies Update
+            for (let i = zombies.length - 1; i >= 0; i--) {
+                const z = zombies[i];
+                z.walkPhase += dt * (z.speed / 22);
+                if (z.flashTimer > 0) z.flashTimer -= dt;
+                if (z.biteTimer > 0) z.biteTimer -= dt;
+
+                z.x += z.knockVx * dt;
+                z.y += z.knockVy * dt;
+                z.knockVx *= Math.pow(0.05, dt);
+                z.knockVy *= Math.pow(0.05, dt);
+
+                const angle = Math.atan2(player.y - z.y, player.x - z.x);
+                z.facingLeft = Math.cos(angle) < -0.1;
+                const vx = Math.cos(angle) * z.speed;
+                const vy = Math.sin(angle) * z.speed;
+
+                const nx = z.x + vx * dt;
+                const ny = z.y + vy * dt;
+                if (!isPointBlocked(nx, z.y, z.radius * 0.7)) z.x = nx;
+                if (!isPointBlocked(z.x, ny, z.radius * 0.7)) z.y = ny;
+
+                for (let k = i - 1; k >= 0; k--) {
+                    const other = zombies[k];
+                    const dx = z.x - other.x;
+                    const dy = z.y - other.y;
+                    const d = Math.hypot(dx, dy);
+                    const minD = (z.radius + other.radius) * 0.85;
+                    if (d > 0 && d < minD) {
+                        const push = (minD - d) * 0.35;
+                        z.x += (dx / d) * push;
+                        z.y += (dy / d) * push;
+                        other.x -= (dx / d) * push;
+                        other.y -= (dy / d) * push;
+                    }
+                }
+
+                // Bite every 0.8s for 10 HP, player gets 0.5s invincibility
+                const distToPlayer = Math.hypot(player.x - z.x, player.y - z.y);
+                if (distToPlayer < player.radius + z.radius) {
+                    if (z.biteTimer <= 0) {
+                        z.biteTimer = 0.8;
+                        if (player.invincibleTimer <= 0) {
+                            const rawDmg = z.type === 'boss' ? 20 : 10;
+                            const reducedDmg = Math.max(1, Math.round(rawDmg * (1 - armorObj.dmgReduction)));
+                            player.hp -= reducedDmg;
+                            player.invincibleTimer = 0.5;
+                            triggerPlayerHurtEffect(reducedDmg);
+                            if (player.hp <= 0) {
+                                player.hp = 0;
+                                triggerGameOver();
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                if (z.hp <= 0) {
+                    handleZombieDeath(z);
+                    zombies.splice(i, 1);
+                }
+            }
+
+            // Coins Magnet Pull
+            for (let i = coins.length - 1; i >= 0; i--) {
+                const c = coins[i];
+                c.spin += dt * 8;
+                const dx = player.x - c.x;
+                const dy = player.y - c.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < 145) {
+                    c.x += (dx / dist) * 390 * dt;
+                    c.y += (dy / dist) * 390 * dt;
+                }
+                if (dist < player.radius + 14) {
+                    player.coins += c.value;
+                    sfx.playCoin();
+                    spawnFloatingText(player.x, player.y - 18, `+${c.value} 🪙`, '#facc15');
+                    coins.splice(i, 1);
+                }
+            }
+
+            // Particles & Hit Bursts
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                p.vx *= 0.91;
+                p.vy *= 0.91;
+                p.life -= dt;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+
+            for (let i = hitBursts.length - 1; i >= 0; i--) {
+                hitBursts[i].life -= dt;
+                if (hitBursts[i].life <= 0) hitBursts.splice(i, 1);
+            }
+
+            for (let i = muzzleFlashes.length - 1; i >= 0; i--) {
+                muzzleFlashes[i].life -= dt;
+                if (muzzleFlashes[i].life <= 0) muzzleFlashes.splice(i, 1);
+            }
+
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                const ft = floatingTexts[i];
+                ft.y -= 28 * dt;
+                ft.life -= dt;
+                if (ft.life <= 0) floatingTexts.splice(i, 1);
+            }
+
+            updateHudUI();
+        }
+
+        function fireWeapon(weapon, baseAngle) {
+            sfx.playShoot(weapon.id);
+
+            const gunOffsetDist = 24;
+            const muzzleX = player.x + Math.cos(baseAngle) * gunOffsetDist;
+            const muzzleY = player.y + Math.sin(baseAngle) * gunOffsetDist;
+
+            muzzleFlashes.push({
+                x: muzzleX,
+                y: muzzleY,
+                angle: baseAngle,
+                size: weapon.id === 'shotgun' || weapon.id === 'rocket' ? 16 : 11,
+                life: 0.06
+            });
+
+            for (let i = 0; i < weapon.pellets; i++) {
+                const spreadAngle = baseAngle + (Math.random() - 0.5) * weapon.spread;
+                bullets.push({
+                    x: muzzleX,
+                    y: muzzleY,
+                    vx: Math.cos(spreadAngle) * weapon.speed,
+                    vy: Math.sin(spreadAngle) * weapon.speed,
+                    damage: weapon.damage * tuning.bulletDmgMult,
+                    pierceLeft: weapon.pierce,
+                    maxRange: weapon.range,
+                    traveled: 0,
+                    radius: weapon.isFlame ? 8 : (weapon.explosionRadius ? 6 : 4),
+                    color: weapon.color,
+                    isFlame: !!weapon.isFlame,
+                    explosionRadius: weapon.explosionRadius || 0,
+                    hitSet: new Set()
+                });
+            }
+        }
+
+        function damageZombie(z, dmg, hitAngle, knockImpulse) {
+            z.hp -= dmg;
+            z.flashTimer = 0.095;
+            const kbScale = z.type === 'boss' ? 0.2 : (z.type === 'fatty' ? 0.45 : 1.0);
+            z.knockVx += Math.cos(hitAngle) * knockImpulse * kbScale;
+            z.knockVy += Math.sin(hitAngle) * knockImpulse * kbScale;
+
+            // Starburst white hit impact rays (just like screenshot!)
+            hitBursts.push({
+                x: z.x,
+                y: z.y - 6,
+                life: 0.09,
+                maxLife: 0.09
+            });
+
+            if (!WEAPONS[player.currentWeapon]?.isFlame) sfx.playHit();
+
+            for (let i = 0; i < 4; i++) {
+                particles.push({
+                    x: z.x,
+                    y: z.y,
+                    vx: Math.cos(hitAngle + (Math.random() - 0.5)) * (70 + Math.random() * 90),
+                    vy: Math.sin(hitAngle + (Math.random() - 0.5)) * (70 + Math.random() * 90),
+                    size: 3 + Math.random() * 3,
+                    color: '#dc2626',
+                    life: 0.28,
+                    maxLife: 0.28
+                });
+            }
+        }
+
+        function triggerExplosion(x, y, radius, damage) {
+            sfx.playExplosion();
+            screenShake = Math.max(screenShake, 11);
+
+            for (let i = 0; i < 36; i++) {
+                const ang = Math.random() * Math.PI * 2;
+                const spd = 40 + Math.random() * 230;
+                particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(ang) * spd,
+                    vy: Math.sin(ang) * spd,
+                    size: 5 + Math.random() * 6,
+                    color: i % 2 === 0 ? '#f97316' : '#facc15',
+                    life: 0.44,
+                    maxLife: 0.44
+                });
+            }
+
+            for (const z of zombies) {
+                const d = Math.hypot(z.x - x, z.y - y);
+                if (d <= radius + z.radius) {
+                    const ang = Math.atan2(z.y - y, z.x - x);
+                    damageZombie(z, damage, ang, 230);
+                }
+            }
+        }
+
+        function handleZombieDeath(z) {
+            killCount++;
+            // Persistent pixel blood puddle on the asphalt road (matching screenshot)
+            if (bloodPools.length > 65) bloodPools.shift();
+            bloodPools.push({
+                x: z.x,
+                y: z.y + 8,
+                size: z.type === 'boss' ? 28 : 16
+            });
+
+            const count = z.type === 'boss' ? 38 : 18;
+            for (let i = 0; i < count; i++) {
+                const ang = Math.random() * Math.PI * 2;
+                const spd = 30 + Math.random() * 155;
+                particles.push({
+                    x: z.x,
+                    y: z.y,
+                    vx: Math.cos(ang) * spd,
+                    vy: Math.sin(ang) * spd,
+                    size: 4 + Math.random() * 4,
+                    color: i % 3 === 0 ? '#7f1d1d' : '#dc2626',
+                    life: 0.55,
+                    maxLife: 0.55
+                });
+            }
+
+            if (Math.random() <= z.coinDropChance) {
+                coins.push({
+                    x: z.x,
+                    y: z.y,
+                    value: z.coinValue,
+                    spin: 0
+                });
+            }
+        }
+
+        function triggerPlayerHurtEffect(dmg) {
+            sfx.playPlayerHurt();
+            screenShake = 12;
+            spawnFloatingText(player.x, player.y - 24, `-${dmg} HP`, '#ef4444');
+            const overlay = document.getElementById('damageOverlay');
+            overlay.style.opacity = '1';
+            setTimeout(() => {
+                overlay.style.opacity = '0';
+            }, 160);
+        }
+
+        function spawnFloatingText(x, y, text, color) {
+            floatingTexts.push({ x, y, text, color, life: 0.75 });
+        }
+
+        // ------------------------------------------------------------------
+        // 11. RENDERING (Warm Sunset Asphalt Street, Neon Signs, SHOP Van, Sprites)
+        // ------------------------------------------------------------------
+        function renderGame() {
+            ctx.save();
+            // Warm sunset brick sidewalk base color matching reference screenshot
+            ctx.fillStyle = '#5c3424';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const shakeX = screenShake > 0 ? (Math.random() - 0.5) * screenShake : 0;
+            const shakeY = screenShake > 0 ? (Math.random() - 0.5) * screenShake : 0;
+            ctx.translate(-Math.round(camera.x - shakeX), -Math.round(camera.y - shakeY));
+
+            drawDuskStreetsAndSidewalks();
+            drawBloodPools();
+            drawBuildingsAndShops();
+            drawChests();
+            drawCoins();
+            drawWreckedCars();
+            drawParticles();
+            drawZombiesAndHitBursts();
+
+            if (player) {
+                const blinkHide = player.invincibleTimer > 0 && Math.floor(player.invincibleTimer * 20) % 2 === 0;
+                if (!blinkHide) {
+                    drawHighResCharacter(
+                        ctx,
+                        player.charId,
+                        player.x,
+                        player.y,
+                        1.85,
+                        player.walkCycle,
+                        player.facingLeft,
+                        player.currentWeapon,
+                        player.aimAngle,
+                        false,
+                        false
+                    );
+                }
+            }
+
+            drawBulletsAndFlashes();
+            drawStreetLampsAndHalos();
+            drawFloatingTexts();
+            drawOffscreenIndicators();
+
+            ctx.restore();
+        }
+
+        function drawDuskStreetsAndSidewalks() {
+            // Sidewalk brick tile grid pattern
+            ctx.strokeStyle = 'rgba(35, 16, 12, 0.35)';
+            ctx.lineWidth = 2;
+            const tile = 64;
+            const startX = Math.floor(camera.x / tile) * tile;
+            const endX = Math.min(WORLD_SIZE, camera.x + canvas.width + tile);
+            const startY = Math.floor(camera.y / tile) * tile;
+            const endY = Math.min(WORLD_SIZE, camera.y + canvas.height + tile);
+
+            for (let x = startX; x <= endX; x += tile) {
+                ctx.beginPath();
+                ctx.moveTo(x, startY);
+                ctx.lineTo(x, endY);
+                ctx.stroke();
+            }
+            for (let y = startY; y <= endY; y += tile) {
+                ctx.beginPath();
+                ctx.moveTo(startX, y);
+                ctx.lineTo(endX, y);
+                ctx.stroke();
+            }
+
+            // Main Sunset-Lit Asphalt Roads (Warm charcoal-brown matching screenshot)
+            ctx.fillStyle = '#3b2824';
+            ctx.fillRect(0, 980, WORLD_SIZE, 440);
+            ctx.fillRect(980, 0, 440, WORLD_SIZE);
+
+            // Warm Dusk Sunset Sheen down the center of the road
+            const roadGlow = ctx.createLinearGradient(980, 0, 1420, 0);
+            roadGlow.addColorStop(0, 'rgba(20, 10, 12, 0.35)');
+            roadGlow.addColorStop(0.5, 'rgba(245, 130, 50, 0.16)');
+            roadGlow.addColorStop(1, 'rgba(20, 10, 12, 0.35)');
+            ctx.fillStyle = roadGlow;
+            ctx.fillRect(980, 0, 440, WORLD_SIZE);
+
+            // Raised Stone Sidewalk Curbs & Storm Drain Grates
+            ctx.fillStyle = '#784c3a';
+            ctx.fillRect(0, 968, WORLD_SIZE, 12);
+            ctx.fillRect(0, 1420, WORLD_SIZE, 12);
+            ctx.fillRect(968, 0, 12, WORLD_SIZE);
+            ctx.fillRect(1420, 0, 12, WORLD_SIZE);
+
+            // Storm Drain Grates along curb (matching screenshot)
+            ctx.fillStyle = '#1c1210';
+            for (let y = 300; y < WORLD_SIZE; y += 340) {
+                ctx.fillRect(982, y, 14, 28);
+                ctx.fillRect(1404, y + 140, 14, 28);
+                ctx.fillStyle = '#47332b';
+                for (let g = 4; g < 26; g += 6) {
+                    ctx.fillRect(984, y + g, 10, 2);
+                    ctx.fillRect(1406, y + 140 + g, 10, 2);
+                }
+                ctx.fillStyle = '#1c1210';
+            }
+
+            // Continuous Double Yellow Center Road Lines (matching screenshot)
+            ctx.fillStyle = '#e5a93c';
+            ctx.fillRect(1194, 0, 5, WORLD_SIZE);
+            ctx.fillRect(1203, 0, 5, WORLD_SIZE);
+            ctx.fillRect(0, 1194, 980, 5);
+            ctx.fillRect(0, 1203, 980, 5);
+            ctx.fillRect(1420, 1194, WORLD_SIZE - 1420, 5);
+            ctx.fillRect(1420, 1203, WORLD_SIZE - 1420, 5);
+
+            // Pixel Road Cracks
+            ctx.strokeStyle = '#241614';
+            ctx.lineWidth = 2;
+            for (const rc of roadCracks) {
+                ctx.beginPath();
+                ctx.moveTo(rc.x, rc.y);
+                ctx.lineTo(rc.x + 14, rc.y + 8);
+                ctx.lineTo(rc.x + 24, rc.y - 4);
+                ctx.stroke();
+            }
+
+            // Outer Map Barrier
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 6;
+            ctx.strokeRect(64, 64, WORLD_SIZE - 128, WORLD_SIZE - 128);
+        }
+
+        function drawBloodPools() {
+            for (const bp of bloodPools) {
+                ctx.fillStyle = 'rgba(136, 19, 25, 0.78)';
+                ctx.fillRect(bp.x - bp.size / 2, bp.y - bp.size / 3, bp.size, bp.size * 0.65);
+                ctx.fillStyle = 'rgba(185, 28, 28, 0.85)';
+                ctx.fillRect(bp.x - bp.size / 3, bp.y - bp.size / 4, bp.size * 0.65, bp.size * 0.45);
+            }
+        }
+
+        function drawBuildingsAndShops() {
+            // 2.5D Pixel Art Storefronts with Glowing Neon Signs ("港雜貨店", "速食店", "SWEET", "SAT")
+            for (const b of buildings) {
+                // Drop shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillRect(b.x + 10, b.y + 12, b.w, b.h);
+
+                // Brick Building Base
+                ctx.fillStyle = '#4a251d';
+                ctx.fillRect(b.x, b.y, b.w, b.h);
+                ctx.strokeStyle = '#1a0d0a';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(b.x, b.y, b.w, b.h);
+
+                // Roof Inset
+                ctx.fillStyle = '#2d1816';
+                ctx.fillRect(b.x + 10, b.y + 10, b.w - 20, b.h - 46);
+
+                // Red & White Striped Storefront Awning at bottom edge
+                const stripeCount = 10;
+                const sw = (b.w - 16) / stripeCount;
+                for (let i = 0; i < stripeCount; i++) {
+                    ctx.fillStyle = i % 2 === 0 ? b.awning : '#f1f5f9';
+                    ctx.fillRect(b.x + 8 + i * sw, b.y + b.h - 32, sw, 18);
+                }
+
+                // Horizontal Neon Sign ("SWEET" / "SAT")
+                if (b.hSign) {
+                    ctx.save();
+                    ctx.shadowColor = b.hSignCol || '#f43f5e';
+                    ctx.shadowBlur = 12;
+                    ctx.fillStyle = '#18101c';
+                    ctx.fillRect(b.x + b.w / 2 - 48, b.y + b.h - 60, 96, 24);
+                    ctx.strokeStyle = b.hSignCol || '#f43f5e';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(b.x + b.w / 2 - 48, b.y + b.h - 60, 96, 24);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '900 13px "Press Start 2P", monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(b.hSign, b.x + b.w / 2, b.y + b.h - 43);
+                    ctx.restore();
+                }
+
+                // Vertical Hanging Neon Sign ("港雜貨店" / "速食店") matching screenshot!
+                if (b.vSign) {
+                    const isLeftBlock = b.x < 1000;
+                    const sx = isLeftBlock ? b.x + b.w + 6 : b.x - 34;
+                    const sy = b.y + 40;
+                    ctx.save();
+                    ctx.shadowColor = b.vSignCol;
+                    ctx.shadowBlur = 14;
+                    ctx.fillStyle = '#1e1024';
+                    ctx.fillRect(sx, sy, 28, 108);
+                    ctx.strokeStyle = b.vSignCol;
+                    ctx.lineWidth = 2.5;
+                    ctx.strokeRect(sx, sy, 28, 108);
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 15px "Noto Sans TC", sans-serif';
+                    ctx.textAlign = 'center';
+                    const chars = b.vSign.split('');
+                    chars.forEach((ch, idx) => {
+                        ctx.fillText(ch, sx + 14, sy + 24 + idx * 24);
+                    });
+                    ctx.restore();
+                }
+            }
+
+            // Detailed 2.5D Pixel Art "SHOP" Armored Blue Vans (Exact match to screenshot!)
+            for (const s of shops) {
+                ctx.save();
+                // Subtle glowing interaction ring on ground
+                ctx.strokeStyle = 'rgba(236, 72, 153, 0.55)';
+                ctx.fillStyle = 'rgba(236, 72, 153, 0.09)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                const vx = s.x - s.w / 2;
+                const vy = s.y - s.h / 2;
+
+                // Van Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.55)';
+                ctx.fillRect(vx + 6, vy + 10, s.w, s.h);
+
+                // Wheels
+                ctx.fillStyle = '#111115';
+                ctx.fillRect(vx + 16, vy + s.h - 6, 22, 10);
+                ctx.fillRect(vx + s.w - 38, vy + s.h - 6, 22, 10);
+                ctx.fillStyle = '#64748b';
+                ctx.fillRect(vx + 22, vy + s.h - 4, 10, 6);
+                ctx.fillRect(vx + s.w - 32, vy + s.h - 4, 10, 6);
+
+                // Armored Blue-Grey Truck Body
+                ctx.fillStyle = '#475970';
+                ctx.fillRect(vx, vy, s.w, s.h);
+                ctx.strokeStyle = '#141821';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(vx, vy, s.w, s.h);
+
+                // Truck Roof Highlight
+                ctx.fillStyle = '#5c718c';
+                ctx.fillRect(vx + 6, vy + 6, s.w - 12, 26);
+
+                // Serving Window & Counter
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(vx + 36, vy + 36, 56, 26);
+                ctx.fillStyle = '#38bdf8';
+                ctx.fillRect(vx + 40, vy + 40, 22, 18);
+
+                // Red & White Striped Awning over Serving Window
+                for (let k = 0; k < 6; k++) {
+                    ctx.fillStyle = k % 2 === 0 ? '#dc2626' : '#f8fafc';
+                    ctx.fillRect(vx + 34 + k * 10, vy + 30, 10, 9);
+                }
+
+                // Glowing Pink/Purple Neon "SHOP" Sign on Roof (Matches Screenshot!)
+                ctx.save();
+                ctx.shadowColor = '#f43f5e';
+                ctx.shadowBlur = 16;
+                ctx.fillStyle = '#2e1038';
+                ctx.fillRect(s.x - 44, vy - 18, 88, 28);
+                ctx.strokeStyle = '#f472b6';
+                ctx.lineWidth = 2.5;
+                ctx.strokeRect(s.x - 44, vy - 18, 88, 28);
+
+                ctx.fillStyle = '#fbcfe8';
+                ctx.font = '900 14px "Press Start 2P", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('SHOP', s.x, vy + 2);
+                ctx.restore();
+
+                ctx.restore();
+            }
+        }
+
+        function drawWreckedCars() {
+            for (const c of wreckedCars) {
+                ctx.save();
+                ctx.translate(Math.round(c.x), Math.round(c.y));
+                ctx.rotate(c.angle);
+
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.52)';
+                ctx.fillRect(-c.w / 2 + 5, -c.h / 2 + 6, c.w, c.h);
+
+                // 4 Tires
+                ctx.fillStyle = '#111115';
+                ctx.fillRect(-c.w / 2 + 8, -c.h / 2 - 4, 16, 5);
+                ctx.fillRect(c.w / 2 - 24, -c.h / 2 - 4, 16, 5);
+                ctx.fillRect(-c.w / 2 + 8, c.h / 2 - 1, 16, 5);
+                ctx.fillRect(c.w / 2 - 24, c.h / 2 - 1, 16, 5);
+
+                // Car Body with crisp pixel outline
+                ctx.fillStyle = c.color;
+                ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h);
+                ctx.strokeStyle = '#141013';
+                ctx.lineWidth = 2.5;
+                ctx.strokeRect(-c.w / 2, -c.h / 2, c.w, c.h);
+
+                // Dark Cracked Windshield & Rear Window
+                ctx.fillStyle = '#1e2631';
+                ctx.fillRect(-c.w / 4 - 6, -c.h / 2 + 5, c.w / 2 + 12, c.h - 10);
+
+                // Car Roof Center
+                ctx.fillStyle = c.roof;
+                ctx.fillRect(-c.w / 5, -c.h / 2 + 7, (c.w * 2) / 5, c.h - 14);
+
+                // Hood damage cracks
+                ctx.strokeStyle = '#141013';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(c.w / 4, -8);
+                ctx.lineTo(c.w / 2 - 6, 4);
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        function drawChests() {
+            // Glowing Golden Pixel Treasure Chests with sparkles (Matches screenshot!)
+            for (const c of chests) {
+                const bobY = Math.sin(c.bobPhase) * 2.5;
+                ctx.save();
+                ctx.translate(Math.round(c.x), Math.round(c.y + bobY));
+
+                // Warm Golden Aura
+                const grad = ctx.createRadialGradient(0, 0, 4, 0, 0, 34);
+                grad.addColorStop(0, 'rgba(253, 224, 71, 0.55)');
+                grad.addColorStop(1, 'rgba(253, 224, 71, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(0, 0, 34, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Pixel Chest Box
+                ctx.fillStyle = '#141013';
+                ctx.fillRect(-16, -13, 32, 25);
+                ctx.fillStyle = '#b45309'; // wood base
+                ctx.fillRect(-14, -11, 28, 21);
+                ctx.fillStyle = '#d97706'; // lid highlight
+                ctx.fillRect(-14, -11, 28, 8);
+                // Gold Trim & Center Latch
+                ctx.fillStyle = '#fde047';
+                ctx.fillRect(-14, -11, 28, 2);
+                ctx.fillRect(-14, -3, 28, 2);
+                ctx.fillRect(-14, -11, 3, 21);
+                ctx.fillRect(11, -11, 3, 21);
+                ctx.fillRect(-3, -5, 6, 7);
+
+                // Floating Pixel Sparkles (+)
+                ctx.fillStyle = '#fef08a';
+                ctx.fillRect(-22, -14, 3, 3);
+                ctx.fillRect(19, -8, 3, 3);
+                ctx.fillRect(-16, 14, 3, 3);
+
+                ctx.restore();
+            }
+        }
+
+        function drawCoins() {
+            for (const c of coins) {
+                ctx.save();
+                ctx.translate(Math.round(c.x), Math.round(c.y));
+                const wScale = Math.max(0.35, Math.abs(Math.cos(c.spin)));
+                ctx.scale(wScale, 1);
+                ctx.fillStyle = '#141013';
+                ctx.beginPath();
+                ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#facc15';
+                ctx.beginPath();
+                ctx.arc(0, 0, 6.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fef08a';
+                ctx.fillRect(-2, -3, 3, 6);
+                ctx.restore();
+            }
+        }
+
+        function drawZombiesAndHitBursts() {
+            for (const z of zombies) {
+                drawHighResZombie(ctx, z);
+            }
+
+            // Comic/Pixel White Starburst Hit Rays (Matches screenshot hit impact!)
+            for (const hb of hitBursts) {
+                ctx.save();
+                ctx.translate(Math.round(hb.x), Math.round(hb.y));
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2.5;
+                const rays = 8;
+                for (let r = 0; r < rays; r++) {
+                    const ang = (r / rays) * Math.PI * 2 + 0.2;
+                    ctx.beginPath();
+                    ctx.moveTo(Math.cos(ang) * 10, Math.sin(ang) * 10);
+                    ctx.lineTo(Math.cos(ang) * 26, Math.sin(ang) * 26);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
+
+        function drawBulletsAndFlashes() {
+            for (const mf of muzzleFlashes) {
+                ctx.save();
+                ctx.translate(Math.round(mf.x), Math.round(mf.y));
+                ctx.rotate(mf.angle);
+                // Spiky pixel muzzle flash
+                ctx.fillStyle = '#f97316';
+                ctx.beginPath();
+                ctx.moveTo(0, -mf.size * 0.6);
+                ctx.lineTo(mf.size * 1.4, 0);
+                ctx.lineTo(0, mf.size * 0.6);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.fillStyle = '#fef08a';
+                ctx.beginPath();
+                ctx.arc(2, 0, mf.size * 0.45, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            for (const b of bullets) {
+                ctx.save();
+                ctx.translate(Math.round(b.x), Math.round(b.y));
+                if (b.isFlame) {
+                    ctx.fillStyle = 'rgba(249, 115, 22, 0.75)';
+                    ctx.fillRect(-b.radius, -b.radius, b.radius * 2, b.radius * 2);
+                    ctx.fillStyle = '#fef08a';
+                    ctx.fillRect(-b.radius * 0.5, -b.radius * 0.5, b.radius, b.radius);
+                } else {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(-b.radius - 1, -b.radius - 1, b.radius * 2 + 2, b.radius * 2 + 2);
+                    ctx.fillStyle = b.color;
+                    ctx.fillRect(-b.radius, -b.radius, b.radius * 2, b.radius * 2);
+                }
+                ctx.restore();
+            }
+        }
+
+        function drawParticles() {
+            for (const p of particles) {
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+                ctx.fillRect(Math.round(p.x - p.size / 2), Math.round(p.y - p.size / 2), Math.ceil(p.size), Math.ceil(p.size));
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        function drawStreetLampsAndHalos() {
+            for (const lamp of streetLamps) {
+                const armOffset = lamp.side === 'left' ? 18 : (lamp.side === 'right' ? -18 : 0);
+                // Tall Dark Metal Curved Streetlamp Pole
+                ctx.fillStyle = '#18141c';
+                ctx.fillRect(lamp.x - 3, lamp.y - 42, 6, 42);
+                ctx.fillRect(Math.min(lamp.x, lamp.x + armOffset), lamp.y - 42, Math.abs(armOffset) + 6, 5);
+
+                // Glowing Bulb
+                const bx = lamp.x + armOffset;
+                const by = lamp.y - 38;
+                ctx.fillStyle = '#fef08a';
+                ctx.fillRect(bx - 5, by - 3, 10, 6);
+
+                // Warm Amber Light Halo on Street
+                const grad = ctx.createRadialGradient(bx, lamp.y - 12, 6, bx, lamp.y - 12, 135);
+                grad.addColorStop(0, 'rgba(253, 224, 71, 0.28)');
+                grad.addColorStop(0.45, 'rgba(249, 115, 22, 0.12)');
+                grad.addColorStop(1, 'rgba(249, 115, 22, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(bx, lamp.y - 12, 135, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawFloatingTexts() {
+            ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
+            ctx.textAlign = 'center';
+            for (const ft of floatingTexts) {
+                ctx.fillStyle = '#000000';
+                ctx.fillText(ft.text, ft.x + 1, ft.y + 1);
+                ctx.fillStyle = ft.color;
+                ctx.fillText(ft.text, ft.x, ft.y);
+            }
+        }
+
+        function drawOffscreenIndicators() {
+            if (!player) return;
+            for (const s of shops) {
+                if (s.x < camera.x || s.x > camera.x + canvas.width || s.y < camera.y || s.y > camera.y + canvas.height) {
+                    const ang = Math.atan2(s.y - player.y, s.x - player.x);
+                    const ix = player.x + Math.cos(ang) * 115;
+                    const iy = player.y + Math.sin(ang) * 115;
+                    ctx.fillStyle = 'rgba(244, 114, 182, 0.9)';
+                    ctx.font = 'bold 11px "Noto Sans TC", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('🚐 SHOP', ix, iy);
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 12. HUD PIXEL ICONS & CHARACTER SELECTION PORTRAITS
+        // ------------------------------------------------------------------
+        function drawHudPixelIcons() {
+            // Draw Pixel Heart Icon
+            const hCanvas = document.getElementById('hudHeartIcon');
+            const hCtx = hCanvas.getContext('2d');
+            hCtx.imageSmoothingEnabled = false;
+            const heartGrid = [
+                "  1111   1111  ",
+                " 122221 122221 ",
+                "123322212222221",
+                "123222222222221",
+                "122222222222241",
+                " 1222222222241 ",
+                "  12222222241  ",
+                "   122222241   ",
+                "    1222241    ",
+                "     12241     ",
+                "      111      "
+            ];
+            const palette = { '1': '#141013', '2': '#ef4444', '3': '#fecaca', '4': '#991b1b' };
+            heartGrid.forEach((row, ry) => {
+                for (let rx = 0; rx < row.length; rx++) {
+                    const c = palette[row[rx]];
+                    if (c) {
+                        hCtx.fillStyle = c;
+                        hCtx.fillRect(rx * 2 + 1, ry * 2 + 4, 2, 2);
+                    }
+                }
+            });
+
+            // Draw Pixel Coin Icon
+            const cCanvas = document.getElementById('hudCoinIcon');
+            const cCtx = cCanvas.getContext('2d');
+            cCtx.imageSmoothingEnabled = false;
+            cCtx.fillStyle = '#141013';
+            cCtx.beginPath();
+            cCtx.arc(10, 10, 9, 0, Math.PI * 2);
+            cCtx.fill();
+            cCtx.fillStyle = '#facc15';
+            cCtx.beginPath();
+            cCtx.arc(10, 10, 7.5, 0, Math.PI * 2);
+            cCtx.fill();
+            cCtx.fillStyle = '#fef08a';
+            cCtx.fillRect(8, 5, 3, 10);
+        }
+
+        function renderCharacterSelectCards() {
+            const grid = document.getElementById('charGrid');
+            grid.innerHTML = '';
+
+            CHARACTERS.forEach(ch => {
+                const isSelected = ch.id === selectedCharId;
+                const card = document.createElement('div');
+                card.className = `char-card cursor-pointer rounded-xl border-2 p-3 flex flex-col items-center text-center bg-[#120d1a]/90 ${isSelected ? 'selected border-amber-400' : 'border-slate-800 hover:border-slate-600'}`;
+
+                const portraitCanvas = document.createElement('canvas');
+                portraitCanvas.width = 120;
+                portraitCanvas.height = 128;
+                portraitCanvas.className = 'w-24 h-28 sm:w-28 sm:h-32 mb-2 rounded-lg bg-[#1a1426] border border-slate-700/80 shadow-inner';
+                const pCtx = portraitCanvas.getContext('2d');
+                pCtx.imageSmoothingEnabled = false;
+
+                const previewWeapon = ch.id === 'ellie' ? 'shotgun' : (ch.id === 'elon' ? 'flamethrower' : 'pistol');
+                drawHighResCharacter(pCtx, ch.id, 58, 72, 2.5, 0, false, previewWeapon, 0, false, true);
+
+                const badge = document.createElement('span');
+                badge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-800 text-amber-300 mb-1 border border-amber-500/30';
+                badge.textContent = ch.franchise;
+
+                const title = document.createElement('div');
+                title.className = 'font-black text-sm sm:text-base text-white';
+                title.textContent = ch.name;
+
+                const sub = document.createElement('div');
+                sub.className = 'text-[11px] font-bold text-amber-400 mb-1';
+                sub.textContent = ch.title;
+
+                const desc = document.createElement('p');
+                desc.className = 'text-[11px] text-slate-400 leading-snug';
+                desc.textContent = ch.desc;
+
+                card.appendChild(portraitCanvas);
+                card.appendChild(badge);
+                card.appendChild(title);
+                card.appendChild(sub);
+                card.appendChild(desc);
+
+                card.addEventListener('click', () => {
+                    sfx.init();
+                    sfx.playCoin();
+                    selectedCharId = ch.id;
+                    renderCharacterSelectCards();
+                });
+
+                grid.appendChild(card);
+            });
+        }
+
+        function updateHudUI() {
+            if (!player) return;
+            const armorObj = ARMORS.find(a => a.id === player.currentArmor) || ARMORS[0];
+
+            document.getElementById('hudArmorBadge').textContent = `${armorObj.name} (${Math.round(armorObj.dmgReduction * 100)}%減傷)`;
+
+            const hpPercent = Math.max(0, Math.min(100, (player.hp / player.maxHp) * 100));
+            document.getElementById('hpBarFill').style.width = `${hpPercent}%`;
+            document.getElementById('hpText').textContent = `${Math.ceil(player.hp)} / ${player.maxHp}`;
+            document.getElementById('coinText').textContent = player.coins;
+
+            document.getElementById('timerText').textContent = formatTimeMMSS(survivalTime);
+            document.getElementById('killText').textContent = killCount;
+            document.getElementById('zombieCountText').textContent = zombies.length;
+
+            const scalePct = Math.round(getFiveMinHpScaling() * tuning.zombieHpMult * 100);
+            document.getElementById('scalingBadge').textContent = `${scalePct}% HP`;
+        }
+
+        function openShopMenu() {
+            if (gameState !== 'PLAYING') return;
+            gameState = 'SHOP';
+            resetJoystick();
+            renderShopItems();
+            document.getElementById('shopModal').classList.remove('hidden');
+        }
+
+        function closeShopMenu() {
+            if (gameState === 'SHOP') gameState = 'PLAYING';
+            document.getElementById('shopModal').classList.add('hidden');
+            drawWeaponWheel();
+            updateHudUI();
+        }
+
+        function renderShopItems() {
+            if (!player) return;
+            document.getElementById('shopCoinText').textContent = player.coins;
+
+            const upgList = document.getElementById('shopUpgradeList');
+            upgList.innerHTML = '';
+
+            // Max HP +20
+            const hpPrice = 30;
+            const hpCard = document.createElement('div');
+            hpCard.className = 'bg-[#110d19] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2';
+            hpCard.innerHTML = `
+                <div>
+                    <div class="font-bold text-sm text-emerald-400">❤️ 血量上限 +20 (同時補 20 血)</div>
+                    <div class="text-xs text-slate-400">目前血量：${Math.ceil(player.hp)} / ${player.maxHp}</div>
+                </div>
+                <button class="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black px-3 py-2 rounded-lg text-xs whitespace-nowrap cursor-pointer" ${player.coins < hpPrice ? 'disabled' : ''}>
+                    🪙 ${hpPrice} 購買
+                </button>
+            `;
+            hpCard.querySelector('button').addEventListener('click', () => {
+                if (player.coins >= hpPrice) {
+                    player.coins -= hpPrice;
+                    player.maxHp += 20;
+                    player.hp = Math.min(player.maxHp, player.hp + 20);
+                    sfx.playChestHeal();
+                    renderShopItems();
+                    updateHudUI();
+                }
+            });
+            upgList.appendChild(hpCard);
+
+            // Armors
+            ARMORS.slice(1).forEach(arm => {
+                const owned = player.ownedArmors.includes(arm.id);
+                const equipped = player.currentArmor === arm.id;
+                const card = document.createElement('div');
+                card.className = 'bg-[#110d19] border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2';
+                card.innerHTML = `
+                    <div>
+                        <div class="font-bold text-sm text-cyan-300">🛡️ ${arm.name}</div>
+                        <div class="text-xs text-slate-400">${arm.desc}</div>
+                    </div>
+                    <button class="${equipped ? 'bg-emerald-600 text-white' : 'bg-amber-500 hover:bg-amber-400 text-slate-950'} disabled:opacity-40 font-black px-3 py-2 rounded-lg text-xs whitespace-nowrap cursor-pointer" ${(!owned && player.coins < arm.price) ? 'disabled' : ''}>
+                        ${equipped ? '已裝備' : (owned ? '點擊穿戴' : `🪙 ${arm.price} 購買`)}
+                    </button>
+                `;
+                card.querySelector('button').addEventListener('click', () => {
+                    if (owned) {
+                        player.currentArmor = arm.id;
+                        sfx.playCoin();
+                    } else if (player.coins >= arm.price) {
+                        player.coins -= arm.price;
+                        player.ownedArmors.push(arm.id);
+                        player.currentArmor = arm.id;
+                        sfx.playChestHeal();
+                    }
+                    renderShopItems();
+                    updateHudUI();
+                });
+                upgList.appendChild(card);
+            });
+
+            // Weapons
+            const wepList = document.getElementById('shopWeaponList');
+            wepList.innerHTML = '';
+
+            Object.values(WEAPONS).forEach(w => {
+                const owned = player.ownedWeapons.includes(w.id);
+                const equipped = player.currentWeapon === w.id;
+                const card = document.createElement('div');
+                card.className = `bg-[#110d19] border ${equipped ? 'border-amber-400' : 'border-slate-800'} rounded-xl p-3 flex items-center justify-between gap-2`;
+                card.innerHTML = `
+                    <div>
+                        <div class="font-bold text-sm text-amber-300">${w.icon} ${w.name}</div>
+                        <div class="text-xs text-slate-400">${w.desc}</div>
+                    </div>
+                    <button class="${equipped ? 'bg-emerald-600 text-white' : 'bg-amber-500 hover:bg-amber-400 text-slate-950'} disabled:opacity-40 font-black px-3 py-2 rounded-lg text-xs whitespace-nowrap cursor-pointer" ${(!owned && player.coins < w.price) ? 'disabled' : ''}>
+                        ${equipped ? '使用中' : (owned ? '切換裝備' : `🪙 ${w.price} 購買`)}
+                    </button>
+                `;
+                card.querySelector('button').addEventListener('click', () => {
+                    if (owned) {
+                        player.currentWeapon = w.id;
+                        sfx.playCoin();
+                    } else if (player.coins >= w.price) {
+                        player.coins -= w.price;
+                        player.ownedWeapons.push(w.id);
+                        player.currentWeapon = w.id;
+                        sfx.playChestHeal();
+                    }
+                    renderShopItems();
+                    drawWeaponWheel();
+                    updateHudUI();
+                });
+                wepList.appendChild(card);
+            });
+        }
+
+        function triggerGameOver() {
+            gameState = 'GAMEOVER';
+            resetJoystick();
+
+            const charObj = CHARACTERS.find(c => c.id === player.charId) || CHARACTERS[0];
+            document.getElementById('goTimeText').textContent = formatTimeMMSS(survivalTime);
+            document.getElementById('goKillText').textContent = killCount;
+            document.getElementById('goCharText').textContent = charObj.name;
+
+            document.getElementById('submitScoreBtn').disabled = false;
+            document.getElementById('submitScoreBtn').textContent = '上傳分數';
+            document.getElementById('submitStatusMsg').classList.add('hidden');
+
+            renderLeaderboardTable();
+            document.getElementById('gameOverModal').classList.remove('hidden');
+        }
+
+        // ------------------------------------------------------------------
+        // 13. UI LISTENERS & SECRET PASSWORD MODAL (94839769)
+        // ------------------------------------------------------------------
+        document.getElementById('startGameBtn').addEventListener('click', () => {
+            sfx.init();
+            initNewGame();
+        });
+
+        document.getElementById('muteBtn').addEventListener('click', () => {
+            const isMuted = sfx.toggleMute();
+            document.getElementById('muteBtn').textContent = isMuted ? '🔇' : '🔊';
+        });
+
+        document.getElementById('openShopBtn').addEventListener('click', openShopMenu);
+        document.getElementById('closeShopBtn').addEventListener('click', closeShopMenu);
+        document.getElementById('resumeFromShopBtn').addEventListener('click', closeShopMenu);
+
+        document.getElementById('replaySameCharBtn').addEventListener('click', () => {
+            sfx.init();
+            initNewGame();
+        });
+
+        document.getElementById('backToCharSelectBtn').addEventListener('click', () => {
+            document.getElementById('gameOverModal').classList.add('hidden');
+            document.getElementById('gameHud').classList.add('hidden');
+            document.getElementById('joystickZone').classList.add('hidden');
+            document.getElementById('weaponWheelZone').classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
+            gameState = 'START';
+        });
+
+        document.getElementById('submitScoreBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('submitScoreBtn');
+            const nameInput = document.getElementById('playerNameInput');
+            const msg = document.getElementById('submitStatusMsg');
+            const charObj = CHARACTERS.find(c => c.id === player.charId) || CHARACTERS[0];
+
+            btn.disabled = true;
+            btn.textContent = '已上傳 ✓';
+            await submitOnlineScore(nameInput.value || '香港倖存者', charObj.name, survivalTime, killCount);
+            msg.textContent = '✅ 成績已成功加入線上排名榜！';
+            msg.classList.remove('hidden');
+        });
+
+        // Secret Settings Modal (Password: 94839769)
+        const secretModal = document.getElementById('secretModal');
+        const passwordGateView = document.getElementById('passwordGateView');
+        const tuningPanelView = document.getElementById('tuningPanelView');
+        const secretPwdInput = document.getElementById('secretPwdInput');
+        const secretPwdError = document.getElementById('secretPwdError');
+
+        document.getElementById('secretSettingBtn').addEventListener('click', () => {
+            secretPwdInput.value = '';
+            secretPwdError.classList.add('hidden');
+            passwordGateView.classList.remove('hidden');
+            tuningPanelView.classList.add('hidden');
+            secretModal.classList.remove('hidden');
+        });
+
+        function checkSecretPassword() {
+            if (secretPwdInput.value.trim() === '94839769') {
+                secretPwdError.classList.add('hidden');
+                passwordGateView.classList.add('hidden');
+                tuningPanelView.classList.remove('hidden');
+                syncSlidersFromTuning();
+            } else {
+                secretPwdError.classList.remove('hidden');
+            }
+        }
+
+        document.getElementById('unlockSecretBtn').addEventListener('click', checkSecretPassword);
+        secretPwdInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') checkSecretPassword();
+        });
+
+        document.getElementById('closeSecretModalBtn1').addEventListener('click', () => secretModal.classList.add('hidden'));
+        document.getElementById('closeSecretModalBtn2').addEventListener('click', () => secretModal.classList.add('hidden'));
+
+        const sliderBindings = [
+            { id: 'cfgPlayerHp', label: 'valPlayerHp', suffix: '' },
+            { id: 'cfgPlayerSpeed', label: 'valPlayerSpeed', suffix: '' },
+            { id: 'cfgBulletDmg', label: 'valBulletDmg', suffix: 'x' },
+            { id: 'cfgFireRate', label: 'valFireRate', suffix: 'x' },
+            { id: 'cfgZombieHp', label: 'valZombieHp', suffix: 'x' },
+            { id: 'cfgZombieSpeed', label: 'valZombieSpeed', suffix: 'x' },
+            { id: 'cfgSpawnRate', label: 'valSpawnRate', suffix: 'x' }
+        ];
+
+        sliderBindings.forEach(b => {
+            const el = document.getElementById(b.id);
+            el.addEventListener('input', () => {
+                document.getElementById(b.label).textContent = `${el.value}${b.suffix}`;
+            });
+        });
+
+        function syncSlidersFromTuning() {
+            document.getElementById('cfgPlayerHp').value = tuning.playerMaxHp;
+            document.getElementById('valPlayerHp').textContent = tuning.playerMaxHp;
+            document.getElementById('cfgPlayerSpeed').value = tuning.playerMoveSpeed;
+            document.getElementById('valPlayerSpeed').textContent = tuning.playerMoveSpeed;
+            document.getElementById('cfgBulletDmg').value = tuning.bulletDmgMult;
+            document.getElementById('valBulletDmg').textContent = `${tuning.bulletDmgMult}x`;
+            document.getElementById('cfgFireRate').value = tuning.fireRateMult;
+            document.getElementById('valFireRate').textContent = `${tuning.fireRateMult}x`;
+            document.getElementById('cfgZombieHp').value = tuning.zombieHpMult;
+            document.getElementById('valZombieHp').textContent = `${tuning.zombieHpMult}x`;
+            document.getElementById('cfgZombieSpeed').value = tuning.zombieSpeedMult;
+            document.getElementById('valZombieSpeed').textContent = `${tuning.zombieSpeedMult}x`;
+            document.getElementById('cfgSpawnRate').value = tuning.spawnRateMult;
+            document.getElementById('valSpawnRate').textContent = `${tuning.spawnRateMult}x`;
+        }
+
+        document.getElementById('resetConfigBtn').addEventListener('click', () => {
+            tuning = { ...DEFAULT_TUNING };
+            syncSlidersFromTuning();
+        });
+
+        document.getElementById('saveConfigBtn').addEventListener('click', () => {
+            tuning.playerMaxHp = parseFloat(document.getElementById('cfgPlayerHp').value);
+            tuning.playerMoveSpeed = parseFloat(document.getElementById('cfgPlayerSpeed').value);
+            tuning.bulletDmgMult = parseFloat(document.getElementById('cfgBulletDmg').value);
+            tuning.fireRateMult = parseFloat(document.getElementById('cfgFireRate').value);
+            tuning.zombieHpMult = parseFloat(document.getElementById('cfgZombieHp').value);
+            tuning.zombieSpeedMult = parseFloat(document.getElementById('cfgZombieSpeed').value);
+            tuning.spawnRateMult = parseFloat(document.getElementById('cfgSpawnRate').value);
+            secretModal.classList.add('hidden');
+        });
+
+        // ------------------------------------------------------------------
+        // 14. RESIZE & ANIMATION LOOP STARTUP
+        // ------------------------------------------------------------------
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.imageSmoothingEnabled = false;
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        let lastFrameTime = performance.now();
+        function gameLoop(now) {
+            const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+            lastFrameTime = now;
+
+            updateGame(dt);
+            renderGame();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.onload = function () {
+            resizeCanvas();
+            drawHudPixelIcons();
+            generateDuskStreetWorld();
+            renderCharacterSelectCards();
+            initFirebaseLeaderboard();
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
